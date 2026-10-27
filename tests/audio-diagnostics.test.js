@@ -17,11 +17,18 @@ test('listenable diagnostic WAVs preserve channel layout and sample rate',async(
 
 
 test('cinematic and race diagnostics isolate named cues on a fixed finite trace',()=>{
- for(const stem of ['focus','reveal','race','combined'])assert.ok(DIAGNOSTIC_STEMS.includes(stem));
+ for(const stem of ['focus','reveal','race','page-turn','pad','combined'])assert.ok(DIAGNOSTIC_STEMS.includes(stem));
  for(const stem of ['focus','reveal']){
   const cues=Array.from({length:160},(_,tick)=>diagnosticCuesAt(stem,tick)).flat();assert.deepEqual(cues,[['transition',stem]]);
  }
  assert.deepEqual(diagnosticCuesAt('race',70),[['raceCue','go']]);assert.deepEqual(diagnosticCuesAt('race',124),[['raceCue','finish']]);
  assert.deepEqual(diagnosticCuesAt('combined',106),[['impact',.7]]);
  for(let tick=0;tick<160;tick++)assert.deepEqual(diagnosticCuesAt('idle-effects',tick),[],'Idle recording cannot receive action sounds');
+});
+
+
+test('page and lane-pad listening stems schedule exactly one finite gesture',()=>{
+ assert.deepEqual(Array.from({length:160},(_,tick)=>diagnosticCuesAt('page-turn',tick)).flat(),[['pageTurn',null]]);
+ assert.deepEqual(Array.from({length:160},(_,tick)=>diagnosticCuesAt('pad',tick)).flat(),[['raceCue','pad']]);
+ assert.deepEqual(diagnosticCuesAt('combined',30),[['pageTurn',null]]);assert.deepEqual(diagnosticCuesAt('combined',92),[['raceCue','pad']]);
 });

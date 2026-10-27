@@ -54,9 +54,39 @@ export function raceCity(progress,places=[]) {
  return current;
 }
 
+
+export const RACE_LANE_LIMIT=3.45;
+export const BOOST_PAD_CAPACITY=16;
+const PAD_BOOST_SECONDS=1.45;
+
+/** Bounded seeded layouts change each race while remaining repeatable for a saved seed. */
+export function generateBoostPads(seed=1,count=12){
+ let value=(Math.trunc(finite(seed,1))>>>0)||1;
+ const random=()=>{value=(Math.imul(value,1664525)+1013904223)>>>0;return value/4294967296;};
+ count=clamp(Math.floor(finite(count,12)),0,BOOST_PAD_CAPACITY);
+ return Array.from({length:count},(_,i)=>({id:`pad-${i}`,progress:.035+(i+.2+random()*.6)/Math.max(1,count)*.91,lane:[-2.75,0,2.75][Math.floor(random()*3)],width:1.8,length:2.8,lastTriggeredAt:-Infinity,lastDriver:null}));
+}
+
+/** Swept rectangular contact: occupying another lane never grants a pad boost. */
+export function boostPadContact(from,to,pad,length=400){
+ if(![from?.distance,to?.distance,from?.lane,to?.lane,pad?.progress,pad?.lane,length].every(Number.isFinite)||length<=0||to.distance<from.distance)return null;
+ const halfLength=Math.max(.1,finite(pad.length,2.8))/2,halfWidth=Math.max(.1,finite(pad.width,1.8))/2;
+ const first=Math.ceil((from.distance-halfLength)/length-pad.progress),last=Math.floor((to.distance+halfLength)/length-pad.progress);
+ const dd=to.distance-from.distance,dl=to.lane-from.lane;
+ for(let cycle=first;cycle<=last;cycle++){
+  const center=(cycle+pad.progress)*length;let enter=0,exit=1;
+  if(dd===0){if(Math.abs(from.distance-center)>halfLength)continue;}
+  else{enter=Math.max(enter,(center-halfLength-from.distance)/dd);exit=Math.min(exit,(center+halfLength-from.distance)/dd);}
+  if(dl===0){if(Math.abs(from.lane-pad.lane)>halfWidth)continue;}
+  else{const a=(pad.lane-halfWidth-from.lane)/dl,b=(pad.lane+halfWidth-from.lane)/dl;enter=Math.max(enter,Math.min(a,b));exit=Math.min(exit,Math.max(a,b));}
+  if(enter<=exit&&enter<=1&&exit>=0)return {cycle:cycle||0,fraction:clamp(enter,0,1)};
+ }
+ return null;
+}
+
 /** A soft side-step resolves contact without awarding distance or stopping a new player. */
 export function resolveRaceContact(player,rivals,{length=400,dt=1/60}={}) {
- const result={lane:clamp(finite(player?.lane),-2.55,2.55),speed:Math.max(0,finite(player?.speed)),hit:false,intensity:0};
+ const result={lane:clamp(finite(player?.lane),-RACE_LANE_LIMIT,RACE_LANE_LIMIT),speed:Math.max(0,finite(player?.speed)),hit:false,intensity:0};
  if(!Number.isFinite(dt)||dt<=0||!Number.isFinite(player?.distance)||player.finished)return result;
  dt=Math.min(dt,.1);length=Math.max(20,finite(length,400));
  for(const rival of rivals){
@@ -65,8 +95,8 @@ export function resolveRaceContact(player,rivals,{length=400,dt=1/60}={}) {
   if(longitudinal>=2.12||Math.abs(result.lane-rival.lane)>=1.05)continue;
   let direction=Math.sign(result.lane-rival.lane)||(result.lane>0?-1:1);
   let target=rival.lane+direction*1.12;
-  if(target< -2.55||target>2.55){direction*=-1;target=rival.lane+direction*1.12;}
-  result.lane=clamp(result.lane+(target-result.lane)*(1-Math.exp(-18*dt)),-2.55,2.55);
+  if(target< -RACE_LANE_LIMIT||target>RACE_LANE_LIMIT){direction*=-1;target=rival.lane+direction*1.12;}
+  result.lane=clamp(result.lane+(target-result.lane)*(1-Math.exp(-18*dt)),-RACE_LANE_LIMIT,RACE_LANE_LIMIT);
   result.speed*=Math.exp(-.75*dt);result.hit=true;
   result.intensity=Math.max(result.intensity,clamp(.4+Math.abs(finite(player.speed)-finite(rival.speed))*.025,.4,.75));
  }
@@ -85,12 +115,13 @@ const DRIVER_SPECS=Object.freeze([
  * Steering chooses a lane; automatic acceleration and soft rails keep new players
  * on course. Laps can only advance by travelling the complete ordered distance.
  */
-export function createBayRace({length=400,laps=3,lapSeconds=32,places=[],onEvent=()=>{}}={}) {
+export function createBayRace({length=400,laps=3,lapSeconds=32,places=[],seed,padCount=12,padLayout,onEvent=()=>{}}={}) {
  length=Math.max(20,finite(length,400));laps=clamp(Math.floor(finite(laps,3)),1,9);lapSeconds=clamp(finite(lapSeconds,32),15,90);
  const baseSpeed=length/lapSeconds,total=length*laps;
+ const baseSeed=Number.isFinite(seed)?Math.trunc(seed):((Date.now()^Math.floor(Math.random()*4294967296))>>>0);let raceNumber=0,pads=[],padVisits=new Map();
  let phase='idle',countdown=3,elapsed=0,drivers=[],lastLap=0,lapStarted=0,bestLap=null,boostEnergy=1,boosting=false,boostReady=true,bumpCooldown=0;
  const emit=(type,data={})=>onEvent({type,...data});
- function makeDrivers(){return DRIVER_SPECS.map((s,i)=>({...s,distance:-i*2||0,progress:wrap(-i*2/length),lap:1,speed:0,finished:false,finishTime:null,place:i+1}));}
+ function makeDrivers(){return DRIVER_SPECS.map((s,i)=>({...s,distance:-i*2||0,progress:wrap(-i*2/length),lap:1,speed:0,finished:false,finishTime:null,place:i+1,padBoost:0,padHits:0}));}
  function ordered(){return [...drivers].sort((a,b)=>{
   if(a.finished&&b.finished)return a.finishTime-b.finishTime||DRIVER_SPECS.findIndex(d=>d.id===a.id)-DRIVER_SPECS.findIndex(d=>d.id===b.id);
   if(a.finished!==b.finished)return a.finished?-1:1;
@@ -101,10 +132,10 @@ export function createBayRace({length=400,laps=3,lapSeconds=32,places=[],onEvent
   const player=standings.find(d=>d.id==='you')||null;
   return {phase,countdown:phase==='countdown'?Math.ceil(countdown-1e-8):0,elapsed,lap:player?.lap||1,laps,place:player?.place||1,
    player,rivals:drivers.filter(d=>d.id!=='you').map(d=>({...d,place:standings.find(s=>s.id===d.id)?.place||1})),standings,
-   city:raceCity(player?.progress||0,places),finishedTime:player?.finishTime??null,bestLap,boostEnergy,boosting,length,totalDistance:total};
+   pads:pads.map(p=>({...p})),padBoost:Boolean(player?.padBoost>0),city:raceCity(player?.progress||0,places),finishedTime:player?.finishTime??null,bestLap,boostEnergy,boosting:boosting||Boolean(player?.padBoost>0),length,totalDistance:total};
  }
- function cancel(){phase='idle';drivers=[];countdown=3;elapsed=0;boosting=false;boostEnergy=1;boostReady=true;bestLap=null;lastLap=0;lapStarted=0;bumpCooldown=0;return state();}
- function start(){phase='countdown';countdown=3;elapsed=0;drivers=makeDrivers();lastLap=0;lapStarted=0;bestLap=null;boostEnergy=1;boosting=false;boostReady=true;bumpCooldown=0;emit('countdown',{value:3});return state();}
+ function cancel(){phase='idle';drivers=[];pads=[];padVisits.clear();countdown=3;elapsed=0;boosting=false;boostEnergy=1;boostReady=true;bestLap=null;lastLap=0;lapStarted=0;bumpCooldown=0;return state();}
+ function start(){phase='countdown';countdown=3;elapsed=0;drivers=makeDrivers();padVisits=new Map(drivers.map(d=>[d.id,new Set()]));pads=Array.isArray(padLayout)?padLayout.slice(0,BOOST_PAD_CAPACITY).map((p,i)=>({id:`pad-${i}`,width:1.8,length:2.8,...p,progress:wrap(finite(p.progress)),lane:clamp(finite(p.lane),-2.75,2.75),lastTriggeredAt:-Infinity,lastDriver:null})):generateBoostPads(baseSeed+Math.imul(raceNumber++,0x9e3779b9),padCount);lastLap=0;lapStarted=0;bestLap=null;boostEnergy=1;boosting=false;boostReady=true;bumpCooldown=0;emit('countdown',{value:3});return state();}
  function advance(dt,input){
   if(phase==='countdown'){
    const previous=Math.ceil(countdown-1e-8);countdown=Math.max(0,countdown-dt);
@@ -113,26 +144,24 @@ export function createBayRace({length=400,laps=3,lapSeconds=32,places=[],onEvent
    return;
   }
   if(phase!=='racing')return;
-  const previousElapsed=elapsed;elapsed+=dt;bumpCooldown=Math.max(0,bumpCooldown-dt);
+  const previousElapsed=elapsed;elapsed+=dt;const previousDrivers=new Map(drivers.map(d=>[d.id,{distance:d.distance,lane:d.lane}]));bumpCooldown=Math.max(0,bumpCooldown-dt);
   const player=drivers[0],steer=clamp(finite(input.steer),-1,1),brake=Boolean(input.brake);
-  player.lane=clamp(player.lane+steer*3.4*dt,-2.55,2.55);
-  const edge=Math.abs(player.lane)>2.43;
-  if(edge&&Math.abs(steer)>.1&&bumpCooldown===0){emit('bump',{intensity:.35});bumpCooldown=.7;}
+  player.lane=clamp(player.lane+steer*3.4*dt,-RACE_LANE_LIMIT,RACE_LANE_LIMIT);
+  // The full usable lane width is equally fast; soft clamps alone keep tires on the deck.
+  for(const d of drivers)d.padBoost=Math.max(0,d.padBoost-dt);
   if(boostEnergy<=.015)boostReady=false;else if(boostEnergy>=.24)boostReady=true;
-  boosting=Boolean(input.boost)&&boostReady&&!brake&&!edge;
+  boosting=Boolean(input.boost)&&boostReady&&!brake;
   boostEnergy=clamp(boostEnergy+(boosting?-.24:.13)*dt,0,1);
-  const line=Math.sin(player.progress*Math.PI*8)*1.45;
-  const clean=1-clamp(Math.abs(player.lane-line)/3,0,1);
-  let target=baseSpeed*(.985+clean*.04)*(boosting?1.34:1)*(edge?.61:1);
+  let target=baseSpeed*1.005*Math.max(boosting?1.34:1,player.padBoost>0?1.48:1);
   if(brake)target=0;
   const response=brake?22:3.8;
   player.speed+=(target-player.speed)*(1-Math.exp(-response*dt));
   for(let i=1;i<drivers.length;i++){
    const d=drivers[i];if(d.finished){d.speed=0;continue;}
    const wobble=Math.sin(elapsed*.58+i*1.7)*.014;
-   const targetLane=Math.sin(d.progress*Math.PI*6+i*2)*1.7;
+   const targetLane=Math.sin(d.progress*Math.PI*6+i*2)*2.8;
    d.lane+=(targetLane-d.lane)*(1-Math.exp(-1.5*dt));
-   const desired=baseSpeed*(d.base+wobble);
+   const desired=baseSpeed*(d.base+wobble)*(d.padBoost>0?1.48:1);
    d.speed+=(desired-d.speed)*(1-Math.exp(-3.2*dt));
   }
   const contact=resolveRaceContact(player,drivers.slice(1),{length,dt});
@@ -141,6 +170,7 @@ export function createBayRace({length=400,laps=3,lapSeconds=32,places=[],onEvent
   for(const d of drivers){
    if(d.finished)continue;
    const previous=d.distance;d.distance=Math.min(total,d.distance+Math.max(0,d.speed)*dt);
+   for(const pad of pads){const contact=boostPadContact(previousDrivers.get(d.id),d,pad,length),seen=padVisits.get(d.id);if(!contact||seen.has(`${pad.id}:${contact.cycle}`))continue;seen.add(`${pad.id}:${contact.cycle}`);d.padBoost=PAD_BOOST_SECONDS;d.padHits++;pad.lastTriggeredAt=elapsed;pad.lastDriver=d.id;if(d.id==='you')emit('pad',{padId:pad.id,intensity:1,lane:pad.lane});}
    d.progress=wrap(d.distance/length);d.lap=Math.min(laps,Math.max(1,Math.floor(Math.max(0,d.distance)/length)+1));
    if(d.distance>=total){
     const fraction=d.distance>previous?(total-previous)/(d.speed*dt):1;

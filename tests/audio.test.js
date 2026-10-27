@@ -344,3 +344,26 @@ test('a wall bump immediately before the finish cannot suppress the finish phras
  const audio=make();await audio.start();const ctx=contexts[0];
  ctx.currentTime=1;assert.equal(await audio.raceCue('bump'),true);ctx.currentTime=1.01;assert.equal(await audio.raceCue('finish'),true);
 });
+
+
+test('page turning is a finite stereo paper rustle with a debounce and no continuous source',async()=>{
+ const audio=make();await audio.start();const ctx=contexts[0],before=ctx.bufferNodes.length,oscillators=ctx.oscillators;
+ ctx.currentTime=1;assert.equal(await audio.pageTurn(),true);const paper=ctx.bufferNodes.at(-1);
+ assert.equal(ctx.bufferNodes.length,before+1);assert.equal(ctx.oscillators,oscillators,'Paper is a filtered rustle rather than a musical phrase');
+ assert.ok(paper.stopTime-paper.startedAt<=.43);assert.notEqual(paper.loop,true);
+ const pan=ctx.panNodes.at(-1);assert.equal(pan.pan.events[0].value,-.25);assert.equal(pan.pan.events.at(-1).value,.25);
+ assert.equal(await audio.pageTurn(),false);ctx.currentTime=1.25;assert.equal(await audio.pageTurn(),true,'A deliberate later page can turn while the first tail settles');
+ audio.setPaused(true);ctx.currentTime=2;assert.equal(await audio.pageTurn(),false);audio.setPaused(false);audio.setMix({effects:false});assert.equal(await audio.pageTurn(),false);
+ audio.setMix({effects:true});audio.mute();assert.equal(await audio.pageTurn(),false);
+});
+
+test('boost pads and robot reactions have distinct short cues and share the bounded action budget',async()=>{
+ const audio=make();await audio.start();const ctx=contexts[0],before=ctx.oscillators;
+ ctx.currentTime=1;assert.equal(await audio.raceCue('pad'),true);const pad=ctx.oscillatorNodes.slice(before);
+ assert.equal(pad.length,3);assert.ok(pad.every(note=>note.frequency.events.at(-1).value>note.frequency.events[0].value));assert.ok(pad.every(note=>note.stopTime-note.startedAt<.33));
+ assert.equal(await audio.raceCue('pad'),false,'Crossing a pad cannot double-trigger within the same instant');
+ ctx.currentTime=1.01;assert.equal(await audio.raceCue('robot'),true);const robot=ctx.oscillatorNodes.slice(before+3);assert.equal(robot.length,3);
+ assert.ok(robot.every(note=>note.type==='triangle'&&note.stopTime-note.startedAt<.16));
+ assert.ok(robot.every(note=>note.connections[0].gain.events.find(event=>event.kind==='linear').value<=.055));
+ audio.setPaused(true);assert.equal(await audio.raceCue('pad'),false);audio.setPaused(false);audio.setMix({effects:false});assert.equal(await audio.raceCue('robot'),false);
+});

@@ -20,17 +20,19 @@ export function audioBufferWav(buffer) {
   return new Blob([view], {type: 'audio/wav'});
 }
 
-export const DIAGNOSTIC_STEMS = ['idle-effects','music','motor','train','drone','birds','actions','focus','reveal','race','combined'];
+export const DIAGNOSTIC_STEMS = ['idle-effects','music','motor','train','drone','birds','actions','focus','reveal','race','page-turn','pad','combined'];
 
 /** Fixed event times make isolated listening and combined headroom repeatable. */
 export function diagnosticCuesAt(stem,tick) {
   if (stem==='focus'||stem==='reveal') return tick===10?[['transition',stem]]:[];
+  if (stem==='page-turn') return tick===10?[['pageTurn',null]]:[];
+  if (stem==='pad') return tick===10?[['raceCue','pad']]:[];
   if (stem==='race') {
     const events={10:'countdown',30:'countdown',50:'countdown',70:'go',100:'lap',124:'finish'};
     return events[tick]?[['raceCue',events[tick]]]:[];
   }
   if (stem==='actions'||stem==='combined') {
-    return ({5:[['transition','focus']],40:[['transition','reveal']],72:[['raceCue','go']],106:[['impact',.7]],128:[['raceCue','finish']]})[tick]||[];
+    return ({5:[['transition','focus']],30:[['pageTurn',null]],40:[['transition','reveal']],92:[['raceCue','pad']],72:[['raceCue','go']],106:[['impact',.7]],128:[['raceCue','finish']]})[tick]||[];
   }
   return [];
 }
@@ -44,7 +46,7 @@ export async function renderAudioDiagnostics({duration = 8, sampleRate = 24000, 
   for (const stem of DIAGNOSTIC_STEMS) {
     const context = new Offline(2, Math.round(duration * sampleRate), sampleRate);let time = 0;
     const audio = createAmbience({offlineContext: context, clock: () => time, manualScheduling: true});
-    const actionOnly=['focus','reveal','race'].includes(stem);
+    const actionOnly=['focus','reveal','race','page-turn','pad'].includes(stem);
     await audio.start();audio.isolateSources(stem === 'combined' ? names : stem === 'idle-effects' ? names.filter(name => name !== 'music') : actionOnly?['actions']:[stem]);
     for (let tick = 0; tick < duration * 20; tick++) {
       time = tick / 20;const idle = stem === 'idle-effects'||actionOnly;

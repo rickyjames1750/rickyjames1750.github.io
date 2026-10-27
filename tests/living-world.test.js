@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { LineCurve3, Matrix4, Scene, Vector3 } from 'three';
-import { createLivingWorld } from '../src/living-world.js';
+import { createLivingWorld, createRobotReaction, sweptRobotContact } from '../src/living-world.js';
 import { createCorridorIndex } from '../src/corridors.js';
 
 function fixture(extra={}){
@@ -82,4 +82,40 @@ test('empty and reduced-motion worlds expose only actual visible drones with val
  const reduced=fixture({reducedMotion:true}).living,result=reduced.nearestDrone(new Vector3());
  assert.ok(result&&Number.isFinite(result.distance));assert.equal(result.speed,0);
  assert.equal(reduced.nearestDrone({x:NaN,y:0,z:0}),undefined);assert.equal(reduced.nearestDrone(),undefined);reduced.dispose();
+});
+
+
+test('swept robot contact catches a crossing but excludes elevated cars and navigation jumps',()=>{
+ const robot={x:0,y:.825,z:0};
+ assert.equal(sweptRobotContact({x:-1.5,y:1,z:0},{x:1.5,y:1,z:0},robot),true);
+ assert.equal(sweptRobotContact({x:-1.5,y:9,z:0},{x:1.5,y:9,z:0},robot),false);
+ assert.equal(sweptRobotContact({x:-1.5,y:9,z:0},{x:1.5,y:1,z:0},robot),false);
+ assert.equal(sweptRobotContact({x:-20,y:1,z:0},{x:20,y:1,z:0},robot),false);
+ assert.equal(sweptRobotContact({x:-1.5,y:1,z:2},{x:1.5,y:1,z:2},robot),false);
+ assert.equal(sweptRobotContact({x:NaN,y:1,z:0},{x:0,y:1,z:0},robot),false);
+});
+
+test('robot reaction falls, complains, gets up, and cannot be retriggered until its cooldown ends',()=>{
+ const reaction=createRobotReaction();assert.equal(reaction.state().phase,'walking');assert.equal(reaction.hit({side:-1}),true);assert.equal(reaction.hit(),false);
+ for(let i=0;i<4;i++)reaction.update(.1);assert.equal(reaction.state().phase,'upset');assert.ok(reaction.state().tilt< -1.3);assert.equal(reaction.state().hits,1);
+ const before=reaction.state();reaction.update(.1,{paused:true});assert.deepEqual(reaction.state(),before);
+ for(let i=0;i<15;i++)reaction.update(.1);assert.equal(reaction.state().phase,'rising');
+ for(let i=0;i<8;i++)reaction.update(.1);assert.equal(reaction.state().phase,'walking');assert.equal(reaction.state().tilt,0);assert.equal(reaction.hit(),false);
+ for(let i=0;i<18;i++)reaction.update(.1);assert.equal(reaction.hit({side:1}),true);assert.equal(reaction.state().hits,2);
+ const reduced=createRobotReaction({reducedMotion:true});assert.equal(reduced.hit(),false);reduced.update(10);assert.equal(reduced.state().phase,'walking');
+});
+
+test('rendered robots freeze at impact, show an upset reaction, and recover without leaving their paths',()=>{
+ const events=[],{living}=fixture({onRobotHit:event=>events.push(event)}),original=living.getRobotStates()[0].position;
+ living.update({dt:.016,carPosition:new Vector3(original.x-1.5,1,original.z),carVelocity:12});
+ living.update({dt:.016,carPosition:new Vector3(original.x+1.5,1,original.z),carVelocity:12});
+ assert.equal(events.length,1);assert.equal(living.stats.robotHits,1);assert.equal(living.getRobotStates()[0].phase,'falling');const hit=living.getRobotStates()[0].position;
+ for(let i=0;i<12;i++)living.update({dt:.05,carPosition:new Vector3(100,1,100),carVelocity:0});
+ assert.equal(living.getRobotStates()[0].phase,'upset');assert.ok(living.getRobotStates()[0].position.distanceTo(hit)<1e-8,'robot must stop walking while it reacts');
+ assert.equal(living.stats.robotsUpset,1);const paused=living.getRobotStates();living.update({dt:1,paused:true});assert.deepEqual(living.getRobotStates(),paused);
+ for(let i=0;i<44;i++)living.update({dt:.05,carPosition:new Vector3(100,1,100),carVelocity:0});
+ assert.equal(living.getRobotStates()[0].phase,'walking');assert.equal(living.stats.robotsUpset,0);assert.equal(events.length,1);
+ for(const mesh of living.root.children){if(mesh.isInstancedMesh){assert.ok(mesh.count<=mesh.instanceMatrix.count);assert.ok(Array.from(mesh.instanceMatrix.array).every(Number.isFinite));}}
+ living.dispose();
+ const elevated=fixture().living,p=elevated.getRobotStates()[0].position;elevated.update({dt:.016,carPosition:new Vector3(p.x-1.5,9,p.z),carVelocity:20});elevated.update({dt:.016,carPosition:new Vector3(p.x+1.5,9,p.z),carVelocity:20});assert.equal(elevated.stats.robotHits,0);elevated.dispose();
 });

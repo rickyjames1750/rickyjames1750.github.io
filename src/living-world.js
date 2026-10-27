@@ -13,8 +13,34 @@ function leafGeometry(){
   const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(positions,3));g.setAttribute('uv',new T.Float32BufferAttribute(uv,2));g.computeVertexNormals();return g;
 }
 
+/** Swept contact is height gated, so an elevated circuit cannot knock over sidewalk robots. */
+export function sweptRobotContact(from,to,robot,{radius=1.03,heightTolerance=.85}={}){
+  if(![from,to,robot].every(p=>p&&[p.x,p.y,p.z].every(Number.isFinite)))return false;
+  const dx=to.x-from.x,dz=to.z-from.z,distanceSquared=dx*dx+dz*dz;
+  // Ignore navigation teleports and stage changes; ordinary driving moves less than a unit/frame.
+  if(distanceSquared>16||Math.abs(to.y-from.y)>1.5)return false;
+  const t=distanceSquared?clamp(((robot.x-from.x)*dx+(robot.z-from.z)*dz)/distanceSquared,0,1):1;
+  return Math.hypot(from.x+dx*t-robot.x,from.z+dz*t-robot.z)<=radius&&Math.abs(from.y+(to.y-from.y)*t-robot.y)<=heightTolerance;
+}
+
+/** A brief cartoon fall, indignant pause, and steady recovery, followed by a contact cooldown. */
+export function createRobotReaction({reducedMotion=false}={}){
+  let age=5,direction=1,hits=0;
+  const smooth=value=>{const t=clamp(value,0,1);return t*t*(3-2*t);};
+  function state(){
+    const phase=age<.3?'falling':age<1.55?'upset':age<2.55?'rising':'walking';
+    const amount=phase==='falling'?smooth(age/.3):phase==='upset'?1:phase==='rising'?1-smooth((age-1.55)/1):0;
+    return {phase,tilt:amount?direction*1.36*amount:0,upset:phase==='upset',recovering:phase!=='walking',cooldown:Math.max(0,4.2-age),hits};
+  }
+  return {
+    state,
+    hit({side=1}={}){if(reducedMotion||age<4.2)return false;age=0;direction=Math.sign(side)||1;hits++;return true;},
+    update(dt,{paused=false}={}){if(!paused&&!reducedMotion&&Number.isFinite(dt)&&dt>0)age=Math.min(5,age+Math.min(dt,.1));return state();},
+  };
+}
+
 /** Small bounded actors, independent of the vehicle/rail simulation and its collision domain. */
-export function createLivingWorld({scene,roadCurve,railCurve,corridors,bridgeDrive,zones=[],reducedMotion=false,isOnLand=()=>true,sampleHeight=()=>.825,quality='high'}={}) {
+export function createLivingWorld({scene,roadCurve,railCurve,corridors,bridgeDrive,zones=[],reducedMotion=false,isOnLand=()=>true,sampleHeight=()=>.825,quality='high',onRobotHit=()=>{}}={}) {
   if(!scene||!roadCurve?.getPointAt)throw new TypeError('Living world requires a scene and driving curve.');
   const root=new T.Group();root.name='Living Peninsula — original robots, drones, and leaves';scene.add(root);
   const ownedGeometries=new Set(),ownedMaterials=new Set(),batches=[];
@@ -33,7 +59,7 @@ export function createLivingWorld({scene,roadCurve,railCurve,corridors,bridgeDri
   const padRings=batch(ownGeometry(new T.RingGeometry(.24,.28,28)),palette.mint,12);
   const leaves=batch(ownGeometry(leafGeometry()),palette.leaf,144);
   let seed=8243;const random=()=>((seed=seed*16807%2147483647)-1)/2147483646;
-  const pos=new T.Vector3(),size=new T.Vector3(),q=new T.Quaternion(),euler=new T.Euler(),local=new T.Matrix4(),world=new T.Matrix4(),pose=new T.Matrix4(),delta=new T.Vector3(),middle=new T.Vector3();
+  const pos=new T.Vector3(),size=new T.Vector3(),q=new T.Quaternion(),euler=new T.Euler(),local=new T.Matrix4(),world=new T.Matrix4(),pose=new T.Matrix4(),emotionPose=new T.Matrix4(),delta=new T.Vector3(),middle=new T.Vector3();
   function put(mesh,frame,x,y,z,w,h,d,rx=0,ry=0,rz=0){pos.set(x,y,z);size.set(w,h,d);q.setFromEuler(euler.set(rx,ry,rz));local.compose(pos,q,size);world.multiplyMatrices(frame,local);mesh.setMatrixAt(mesh.count++,world);}
   function box(color,frame,x,y,z,w,h,d,rx=0,ry=0,rz=0){put(boxBatches[color],frame,x,y,z,w,h,d,rx,ry,rz);}
   function ball(mesh,frame,x,y,z,r){put(mesh,frame,x,y,z,r,r,r);}
@@ -49,7 +75,7 @@ export function createLivingWorld({scene,roadCurve,railCurve,corridors,bridgeDri
   for(const t of candidates){if(robots.length>=8)break;const side=robots.length%3===2?1:-1,lateral=side*2.75,extent=2.1;
     if(robots.some(r=>Math.abs(r.t-t)*routeLength<4))continue;
     const probes=[-extent,-extent/2,0,extent/2,extent].map(d=>frameAt(t+d/routeLength,lateral));if(probes.some(p=>!valid(p.x,p.z,.22)))continue;
-    robots.push({t,lateral,extent,phase:random()*Math.PI*2,size:.78+random()*.13,heading:null});
+    robots.push({t,lateral,extent,phase:random()*Math.PI*2,size:.78+random()*.13,heading:null,walkClock:0,reaction:createRobotReaction({reducedMotion}),position:new T.Vector3(),freeze:null});
   }
   for(const t of [.07,...zones.map(closest),.48,.78]){if(drones.length>=4)break;if(drones.some(d=>Math.abs(d.t-t)*routeLength<9))continue;
     const probes=[-4,0,4].map(d=>frameAt(t+d/routeLength,-3.05));if(probes.some(p=>!valid(p.x,p.z,.65)))continue;
@@ -65,27 +91,41 @@ export function createLivingWorld({scene,roadCurve,railCurve,corridors,bridgeDri
   if(leaves.instanceColor)leaves.instanceColor.needsUpdate=true;
   root.userData.reservations={robotPaths:robots.map(r=>({t:r.t,lateral:r.lateral,extent:r.extent})),dronePaths:drones.map(d=>({t:d.t,lateral:-3.05,altitude:4.9})),pads:pads.map(p=>({...p,r:.28}))};
   let clock=0,lastQuality='',rendered=false,disposed=false,actorsPaused=true,counts={robots:0,drones:0,leaves:0};
-  const audioPosition=new T.Vector3(),nearestPosition=new T.Vector3();
-  function robot(r,index,carPosition,dt){
-    const travel=reducedMotion?0:Math.sin(clock*.38+r.phase)*r.extent,t=r.t+travel/routeLength,p=frameAt(t,r.lateral);
-    const toward=reducedMotion?1:Math.cos(clock*.38+r.phase),walking=!reducedMotion;
-    const desired=p.heading+(toward<0?Math.PI:0),gait=walking?clock*5.9+r.phase:0;
-    if(r.heading===null)r.heading=desired;else r.heading+=Math.atan2(Math.sin(desired-r.heading),Math.cos(desired-r.heading))*Math.min(1,dt*4);
-    const heading=r.heading;
-    const near=carPosition&&Math.hypot(carPosition.x-p.x,carPosition.z-p.z)<2.6;
-    const floor=Math.max(.825,Number(sampleHeight(p.x,p.z))||.825);
-    pos.set(p.x,floor+(walking?Math.abs(Math.sin(gait))*.009:0),p.z);q.setFromEuler(euler.set(0,heading,0));size.setScalar(r.size);pose.compose(pos,q,size);
+  const audioPosition=new T.Vector3(),nearestPosition=new T.Vector3();let previousCar=null,robotHits=0;
+  function robot(r,index,carPosition,carVelocity,dt){
+    let reaction=r.reaction.update(dt),walking=!reducedMotion&&!reaction.recovering;
+    if(walking)r.walkClock+=dt;
+    const travel=reducedMotion?0:Math.sin(r.walkClock*.38+r.phase)*r.extent,t=r.t+travel/routeLength;
+    let p=r.freeze&&reaction.recovering?r.freeze:frameAt(t,r.lateral);
+    const toward=reducedMotion?1:Math.cos(r.walkClock*.38+r.phase),desired=p.heading+(toward<0?Math.PI:0),gait=walking?r.walkClock*5.9+r.phase:0;
+    if(r.heading===null)r.heading=desired;else if(walking)r.heading+=Math.atan2(Math.sin(desired-r.heading),Math.cos(desired-r.heading))*Math.min(1,dt*4);
+    const heading=r.heading,floor=Math.max(.825,Number(sampleHeight(p.x,p.z))||.825);
+    r.position.set(p.x,floor,p.z);
+    const moving=dt>0&&Math.abs(carVelocity)>.3;
+    if(walking&&moving&&sweptRobotContact(previousCar||carPosition,carPosition,r.position)){
+      const awayX=p.x-carPosition.x,awayZ=p.z-carPosition.z,side=-Math.sign(awayX*Math.cos(heading)-awayZ*Math.sin(heading))||(index%2?1:-1);
+      if(r.reaction.hit({side})){r.freeze={...p};reaction=r.reaction.state();walking=false;robotHits++;onRobotHit({index,position:r.position.clone(),intensity:clamp(Math.abs(carVelocity)/15,.25,.8)});}
+    }
+    if(!reaction.recovering)r.freeze=null;
+    const near=carPosition&&Math.abs(carPosition.y-floor)<1&&Math.hypot(carPosition.x-p.x,carPosition.z-p.z)<2.6;
+    const lift=Math.abs(Math.sin(reaction.tilt))*.34*r.size;
+    pos.set(p.x,floor+lift+(walking?Math.abs(Math.sin(gait))*.009:0),p.z);q.setFromEuler(euler.set(0,heading,reaction.tilt,'YXZ'));size.setScalar(r.size);pose.compose(pos,q,size);
     box('teal',pose,0,.57,0,.3,.37,.22);box('dark',pose,0,.365,0,.22,.09,.17);box('paper',pose,0,.91,0,.32,.25,.245);
-    box('dark',pose,0,.925,.128,.266,.13,.018);for(const x of [-.068,.068])box('mint',pose,x,.93,.141,.052,.026,.012);
+    box('dark',pose,0,.925,.128,.266,.13,.018);for(const x of [-.068,.068])box(reaction.recovering?'warm':'mint',pose,x,.93,.141,.052,.026,.012);
+    if(reaction.recovering){for(const side of [-1,1])box('warm',pose,side*.068,.981,.146,.074,.013,.013,0,0,side*.3);box('warm',pose,0,.873,.143,.085,.012,.012);}
     box('warm',pose,0,.62,.12,.09,.045,.014);box('dark',pose,0,.55,-.17,.25,.27,.12);box('warm',pose,0,.55,-.238,.14,.13,.02);
     rod(pose,[.08,1.045,-.02],[.08,1.16,-.02],.012);ball(sphereMint,pose,.08,1.175,-.02,.025);
     for(const side of [-1,1]){
-      const phase=gait+(side<0?Math.PI:0),step=walking?Math.cos(phase)*.13:0,lift=walking?Math.max(0,Math.sin(phase))*.055:0;
-      const hip=[side*.102,.36,0],knee=[side*.105,.2,step*.6+.018],ankle=[side*.105,.07+lift,step];
-      rod(pose,hip,knee,.065);rod(pose,knee,ankle,.06);ball(sphereMetal,pose,...knee,.045);box('dark',pose,side*.105,.044+lift,step+.035,.115,.078,.18);
-      const wave=near&&side<0&&!reducedMotion,arm=walking?Math.sin(phase)*.07:0;
-      const shoulder=[side*.19,.73,0],elbow=wave?[side*.28,.89,.03]:[side*.225,.54,-arm],hand=wave?[side*.32,1.07+Math.sin(clock*7)*.035,.06]:[side*.22,.39,-arm*1.6];
+      const phase=gait+(side<0?Math.PI:0),step=walking?Math.cos(phase)*.13:0,footLift=walking?Math.max(0,Math.sin(phase))*.055:0;
+      const hip=[side*.102,.36,0],knee=[side*.105,.2,step*.6+.018],ankle=[side*.105,.07+footLift,step];
+      rod(pose,hip,knee,.065);rod(pose,knee,ankle,.06);ball(sphereMetal,pose,...knee,.045);box('dark',pose,side*.105,.044+footLift,step+.035,.115,.078,.18);
+      const wave=near&&side<0&&!reducedMotion,arm=walking?Math.sin(phase)*.07:0,indignant=reaction.upset;
+      const shoulder=[side*.19,.73,0],elbow=indignant?[side*.29,.88,.03]:wave?[side*.28,.89,.03]:[side*.225,.54,-arm],hand=indignant?[side*.34,1.04+Math.sin(clock*12+side)*.065,.07]:wave?[side*.32,1.07+Math.sin(clock*7)*.035,.06]:[side*.22,.39,-arm*1.6];
       ball(sphereMetal,pose,...shoulder,.052);rod(pose,shoulder,elbow,.06);rod(pose,elbow,hand,.055);ball(sphereMetal,pose,...hand,.047);
+    }
+    if(reaction.upset){
+      q.setFromEuler(euler.set(0,heading,0));emotionPose.compose(pos.set(p.x,floor+1.12*r.size,p.z),q,size.setScalar(r.size));
+      ball(sphereMetal,emotionPose,0,0,0,.14);box('warm',emotionPose,0,.023,.14,.026,.105,.015);box('warm',emotionPose,0,-.062,.14,.027,.026,.015);
     }
   }
   function drone(d,index,dt){
@@ -111,7 +151,7 @@ export function createLivingWorld({scene,roadCurve,railCurve,corridors,bridgeDri
     for(const mesh of batches)mesh.count=0;
     const previouslyVisibleDrones=counts.drones;
     counts={robots:Math.min(robots.length,reducedMotion?4:level==='eco'?4:8),drones:Math.min(drones.length,reducedMotion?2:level==='eco'?2:4),leaves:reducedMotion?24:level==='eco'?48:144};
-    for(let i=0;i<counts.robots;i++)robot(robots[i],i,carPosition,paused||reducedMotion?0:dt);
+    for(let i=0;i<counts.robots;i++)robot(robots[i],i,carPosition,carVelocity,paused||reducedMotion?0:dt);
     for(let i=0;i<counts.drones;i++)drone(drones[i],i,paused||reducedMotion||i>=previouslyVisibleDrones?0:dt);
     for(const pad of pads.slice(0,counts.drones)){
       pos.set(pad.x,pad.y,pad.z);q.setFromEuler(euler.set(-Math.PI/2,0,0));size.setScalar(1);world.compose(pos,q,size);padRings.setMatrixAt(padRings.count++,world);
@@ -130,7 +170,7 @@ export function createLivingWorld({scene,roadCurve,railCurve,corridors,bridgeDri
     }
     leaves.count=counts.leaves;
     for(const mesh of batches)if(mesh.count)mesh.instanceMatrix.needsUpdate=true;
-    rendered=true;lastQuality=level;
+    previousCar=carPosition&&[carPosition.x,carPosition.y,carPosition.z].every(Number.isFinite)?new T.Vector3().copy(carPosition):null;rendered=true;lastQuality=level;
   }
   update({dt:0,paused:true,quality});
   /** Nearest currently rendered drone, using cached actor poses rather than scene traversal. */
@@ -150,7 +190,8 @@ export function createLivingWorld({scene,roadCurve,railCurve,corridors,bridgeDri
   }
   return {
     root,update,nearestDrone,
-    get stats(){return {...counts,drawCalls:batches.filter(m=>m.count>0).length,chargingPads:pads.length,reducedMotion,actorsBounded:true};},
+    getRobotStates(){return robots.slice(0,counts.robots).map(r=>({...r.reaction.state(),position:r.position.clone()}));},
+    get stats(){return {...counts,robotHits,robotsUpset:robots.slice(0,counts.robots).filter(r=>r.reaction.state().recovering).length,drawCalls:batches.filter(m=>m.count>0).length,chargingPads:pads.length,reducedMotion,actorsBounded:true};},
     dispose(){if(disposed)return;disposed=true;root.removeFromParent();for(const mesh of batches)mesh.dispose();for(const g of ownedGeometries)g.dispose();for(const m of ownedMaterials)m.dispose();},
   };
 }

@@ -13,7 +13,7 @@ test('rich crowns, branched trunks and grass respect pre-reserved tree footprint
   const {nature}=fixture();
   for(const name of ['Layered leafy crowns','Wind grass clumps','Branched coastal trunks']){
     const mesh=batch(nature.root,name);
-    everyVertex(mesh,(v,i)=>{const tree=trees[i%trees.length];const animatedMargin=name==='Layered leafy crowns'?.007*tree.s:name==='Wind grass clumps'?.031*tree.s:0;assert.ok(Math.hypot(v.x-tree.x,v.z-tree.z)+animatedMargin<=.8*tree.s+1e-6,`${name} exceeds the reserved foliage radius`);assert.ok(v.y>=.6-1e-6,'tree detail cannot be planted under the terrain');});
+    everyVertex(mesh,(v,i)=>{const tree=trees[i%trees.length];const animatedMargin=name==='Layered leafy crowns'?.09*tree.s:name==='Wind grass clumps'?.031*tree.s:.07*tree.s;assert.ok(Math.hypot(v.x-tree.x,v.z-tree.z)+animatedMargin<=.8*tree.s+1e-6,`${name} exceeds the reserved foliage radius`);assert.ok(v.y>=.6-1e-6,'tree detail cannot be planted under the terrain');});
   }
   const leaves=batch(nature.root,'Layered leafy crowns'),tufts=batch(nature.root,'Wind grass clumps'),triangles=leaves.geometry.getAttribute('position').count/3;assert.ok(triangles>=200&&triangles<=350,'individual leaves remain within the mobile cluster triangle budget');assert.equal(tufts.geometry.getAttribute('position').count/3,15,'each grass tuft contains five curved blades');for(const mesh of [leaves,tufts]){const colors=mesh.geometry.getAttribute('color');assert.ok(colors?.count===mesh.geometry.getAttribute('position').count);assert.ok(new Set(Array.from(colors.array).map(n=>n.toFixed(2))).size>6,'leaf and grass highlights use varied vertex shades');}
   assert.equal(nature.stats.canopyClusters,trees.length*5);assert.equal(nature.stats.grassTufts,trees.length*6);assert.equal(nature.stats.grassBlades,trees.length*30);
@@ -46,8 +46,23 @@ test('bounded static batches contain finite transforms and release their owned G
 test('roadside grass patches reuse the finite grass batch without generating tree geometry',()=>{
   const scene=new Scene(),patches=[{x:14,z:-5,s:.5},{x:22,z:10,s:1},{x:-2,z:30,s:.73}];
   const nature=createUrbanNature({scene,treePositions:[trees[0]],grassPatches:patches,buildings:[]}),sites=[trees[0],...patches],grass=batch(nature.root,'Wind grass clumps');
-  assert.equal(nature.stats.trees,1);assert.equal(nature.stats.grassPatches,patches.length);assert.equal(nature.stats.canopyClusters,5);assert.equal(nature.canopy.count,1);assert.equal(batch(nature.root,'Branched coastal trunks').count,5);assert.equal(nature.stats.grassTufts,sites.length*6);
+  assert.equal(nature.stats.trees,1);assert.equal(nature.stats.grassPatches,patches.length);assert.equal(nature.stats.canopyClusters,5);assert.equal(nature.canopy.count,1);assert.equal(batch(nature.root,'Branched coastal trunks').count,13);assert.equal(nature.stats.grassTufts,sites.length*6);
   everyVertex(grass,(v,i)=>{const p=sites[i%sites.length];assert.ok(Math.hypot(v.x-p.x,v.z-p.z)+.031*p.s<=.8*p.s+1e-6,'wind-displaced roadside grass must stay inside its supplied reservation');});
   const draws=nature.stats.drawCalls;nature.update({quality:'eco',paused:true});assert.equal(nature.stats.grassTufts,sites.length*3);assert.equal(nature.stats.drawCalls,draws,'roadside planting cannot add rendering passes');nature.dispose();
   const grassOnly=createUrbanNature({scene,grassPatches:patches});assert.equal(grassOnly.stats.trees,0);assert.equal(grassOnly.canopy.count,0);assert.equal(batch(grassOnly.root,'Branched coastal trunks').count,0);assert.equal(batch(grassOnly.root,'Layered leafy crowns').count,0);assert.equal(grassOnly.stats.grassTufts,patches.length*6);assert.equal(grassOnly.stats.drawCalls,1);grassOnly.dispose();
+});
+
+
+test('coherent branch sway and separate leaf flutter use tree anchors while reduced motion stays still',()=>{
+ const {nature}=fixture(),leaf=batch(nature.root,'Layered leafy crowns'),bark=batch(nature.root,'Branched coastal trunks');
+ assert.equal(bark.count,trees.length*13,'each tree has a main trunk, four branches, and eight fine twigs');
+ for(const mesh of [leaf,bark]){
+  const roots=mesh.geometry.getAttribute('urbanTree');assert.equal(roots.count,mesh.count);assert.equal(roots.itemSize,4);
+  for(let i=0;i<roots.count;i++){const tree=trees[i%trees.length];assert.equal(roots.getX(i),tree.x);assert.equal(roots.getZ(i),tree.z);assert.ok(Math.abs(roots.getW(i)-tree.s)<1e-7);}
+  const shader={vertexShader:ShaderLib.standard.vertexShader,fragmentShader:ShaderLib.standard.fragmentShader,uniforms:{}};mesh.material.onBeforeCompile(shader);
+  assert.equal(shader.uniforms.uUrbanTime,nature.root.userData.windUniform);assert.equal(shader.uniforms.uTreeWind.value,1);assert.match(shader.vertexShader,/treeHeight/);assert.match(shader.vertexShader,/treeShift/);
+  if(mesh===leaf)assert.match(shader.vertexShader,/leafFlutter/);
+ }
+ nature.update({dt:.06});assert.equal(nature.root.userData.windUniform.value,.06);nature.dispose();
+ const reduced=fixture({reducedMotion:true}).nature,mesh=batch(reduced.root,'Layered leafy crowns'),shader={vertexShader:ShaderLib.standard.vertexShader,fragmentShader:ShaderLib.standard.fragmentShader,uniforms:{}};mesh.material.onBeforeCompile(shader);assert.equal(shader.uniforms.uTreeWind.value,0);reduced.dispose();
 });

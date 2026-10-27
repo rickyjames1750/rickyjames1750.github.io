@@ -6,14 +6,14 @@ An interactive portfolio set in a miniature San Francisco Bay Area. Explore prof
 
 ## Experience
 
-- **Read:** open any resume section. A permanent scroll rail, reading progress and highlighted “More below” control keep longer sections easy to navigate. Use the section selector or fixed Next section button to move directly between topics.
+- **Read:** open any resume section. A permanent scroll rail, reading progress and highlighted “More below” control keep longer sections easy to navigate. Use the section selector for direct reading. Next section turns the page with a paper sound and drives the car to the next stop.
 - **Drive:** use WASD, arrow keys, or the right-hand mouse/touch joystick. Space brakes, H sounds the horn, C follows the car, Shift boosts and R resets.
 - **Travel:** choose any of the five destinations for a guided trip. The Golden Gate Bridge connects to the driving route, including automatic return to resume stops.
 - **Caltrain:** follow the electrified Peninsula corridor. The Future Portal preview illustrates a proposed connection to the Salesforce Transit Center.
 - **Sound:** adjust volume, music, world ambience and vehicle effects independently in Audio mix. Preferences persist across visits.
 - **Classic view:** read all portfolio content without driving.
 
-The optional **Bay Circuit** is a three-lap scenic race with three computer-controlled rivals, automatic acceleration, touch steering, boost, and a finish leaderboard. A run takes roughly 90 seconds, and the portfolio remains one click away.
+The optional **Bay Circuit** is a three-lap scenic race with three computer-controlled rivals, automatic acceleration, touch steering, randomized lane-specific boost pads, manual boost, and a finish leaderboard. Phones use landscape for racing and pause safely when rotated upright. A run takes roughly 90 seconds, and the portfolio remains one click away.
 
 ## Development
 

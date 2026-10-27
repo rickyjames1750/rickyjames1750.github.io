@@ -13,7 +13,7 @@ export function createAmbience({offlineContext, clock, manualScheduling = false}
   const targets = {motor: 0, road: 0, braking: 0, train: 0, drone: 0};
   let requested = false, paused = false, destroyed = false, unavailable = false;
   let musicTimer, suspendTimer, chordIndex = 0, attempts = 0, nextStepTime = null, musicStep = 0, nextBirdTime = 1.5;
-  let motion = 0, travelMode = 'car', lastState = '', motionTime = null, acceleration = 0, braking = 0, lastHornTime = -Infinity, lastImpactTime = -Infinity, lastBrakeTime = -Infinity, lastTransitionTime = -Infinity, lastRaceCueTime = {}, activeRaceCues = 0, raceCueSlots = [], impactBuffer, skidBuffer, activeImpacts = 0, activeTransitions = 0, brakeHeld = false;
+  let motion = 0, travelMode = 'car', lastState = '', motionTime = null, acceleration = 0, braking = 0, lastHornTime = -Infinity, lastImpactTime = -Infinity, lastBrakeTime = -Infinity, lastTransitionTime = -Infinity, lastPageTime = -Infinity, lastRaceCueTime = {}, activeRaceCues = 0, raceCueSlots = [], impactBuffer, skidBuffer, paperBuffer, activeImpacts = 0, activeTransitions = 0, brakeHeld = false;
   let environment = {trainDistance: Infinity, trainSpeed: 14, trainPan: 0, trainApproach: 0, droneDistance: Infinity, dronePan: 0, droneSpeed: 0, birdActivity: .6};
   let droneArmed = true, droneStart = -Infinity, droneUntil = -Infinity, droneRearmAt = 0, previousDroneDistance = Infinity, droneRelativeSpeed = 0;
   const sources = [], transients = new Set(), scoreNotes = new Set(), padPairs = [], listeners = new Set(), resumeTimers = new Map();
@@ -375,12 +375,28 @@ export function createAmbience({offlineContext, clock, manualScheduling = false}
     }
     return true;
   }
+  async function pageTurn() {
+    if (!mix.effects || paused || (!isEnabled() && !await attemptStart(false))) return false;
+    const time=audioTime();if(time-lastPageTime<.24)return false;lastPageTime=time;
+    // Three small rustles follow the flex, turn and settling of a paper sheet.
+    paperBuffer ||= noiseBuffer(.42);
+    const paper=context.createBufferSource(),high=context.createBiquadFilter(),low=context.createBiquadFilter(),envelope=gain(0),pan=context.createStereoPanner();
+    paper.buffer=paperBuffer;high.type='highpass';high.frequency.value=420;low.type='lowpass';low.Q.value=.5;
+    low.frequency.setValueAtTime(1800,time);low.frequency.linearRampToValueAtTime(3100,time+.13);low.frequency.linearRampToValueAtTime(1050,time+.4);
+    pan.pan.setValueAtTime(-.25,time);pan.pan.linearRampToValueAtTime(.25,time+.38);
+    envelope.gain.setValueAtTime(0,time);envelope.gain.linearRampToValueAtTime(.13,time+.025);envelope.gain.linearRampToValueAtTime(.035,time+.08);
+    envelope.gain.linearRampToValueAtTime(.18,time+.14);envelope.gain.linearRampToValueAtTime(.015,time+.23);envelope.gain.linearRampToValueAtTime(.065,time+.29);envelope.gain.exponentialRampToValueAtTime(.0001,time+.4);
+    paper.connect(high).connect(low).connect(envelope).connect(pan).connect(sourceBuses.actions);transients.add(paper);
+    paper.onended=()=>{transients.delete(paper);for(const node of [paper,high,low,envelope,pan])node.disconnect();};paper.start(time);paper.stop(time+.42);return true;
+  }
   async function raceCue(type) {
     const phrases = {
       countdown:[[440,0,.22]], go:[[659.2551,0,.12],[880,.11,.35]],
       lap:[[587.3295,0,.13],[739.9888,.12,.13],[880,.24,.28]],
       finish:[[587.3295,0,.16],[739.9888,.14,.16],[880,.28,.18],[1174.659,.48,.65]],
       bump:[[110,0,.13]],
+      pad:[[493.8833,0,.14],[659.2551,.08,.16],[987.7666,.18,.3]],
+      robot:[[392,0,.1],[311.127,.12,.11],[440,.25,.13]],
     };
     if (!phrases[type] || !mix.effects || paused || (!isEnabled() && !await attemptStart(false))) return false;
     const time=audioTime();raceCueSlots=raceCueSlots.filter(slot=>slot.until>time);activeRaceCues=raceCueSlots.length;
@@ -389,8 +405,9 @@ export function createAmbience({offlineContext, clock, manualScheduling = false}
     let remaining=phrases[type].length;
     for (const [frequency,offset,duration] of phrases[type]) {
       const note=context.createOscillator(),envelope=gain(0),start=time+offset;
-      note.type=type==='bump'?'triangle':'sine';note.frequency.value=frequency;
-      envelope.gain.setValueAtTime(0,start);envelope.gain.linearRampToValueAtTime(type==='go'?.15:.11,start+.009);envelope.gain.exponentialRampToValueAtTime(.0001,start+duration);
+      note.type=type==='bump'||type==='robot'?'triangle':'sine';note.frequency.value=frequency;
+      if(type==='pad'){note.frequency.setValueAtTime(frequency*.85,start);note.frequency.exponentialRampToValueAtTime(frequency*1.24,start+duration);}
+      envelope.gain.setValueAtTime(0,start);envelope.gain.linearRampToValueAtTime(type==='go'?.15:type==='robot'?.055:.11,start+.009);envelope.gain.exponentialRampToValueAtTime(.0001,start+duration);
       note.connect(envelope).connect(sourceBuses.actions);transients.add(note);
       note.onended=()=>{transients.delete(note);note.disconnect();envelope.disconnect();if(--remaining===0){raceCueSlots=raceCueSlots.filter(value=>value!==slot);activeRaceCues=raceCueSlots.length;}};
       note.start(start);note.stop(start+duration+.025);
@@ -447,7 +464,7 @@ export function createAmbience({offlineContext, clock, manualScheduling = false}
     subscribe(listener) {listeners.add(listener);listener(state());return () => listeners.delete(listener);},
     // A clone gives each recorder ownership of its tracks without ending later recordings.
     getStream(clone = true) {return clone ? (recordDestination?.stream?.clone?.() || null) : (recordDestination?.stream || null);},
-    setMotion, horn, impact, brake, transition, raceCue,
+    setMotion, horn, impact, brake, transition, pageTurn, raceCue,
     setPaused(value) {paused = Boolean(value);updateMotion();},
     destroy() {
       destroyed = true;requested = false;clearInterval(musicTimer);clearTimeout(suspendTimer);

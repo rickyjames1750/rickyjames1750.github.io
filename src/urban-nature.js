@@ -4,10 +4,10 @@ const BASE=.6, BUILDING_BASE=.63, UP=new T.Vector3(0,1,0);
 const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
 const hash=n=>{const v=Math.sin(n*127.1+311.7)*43758.5453;return v-Math.floor(v);};
 
-function foliageGeometry(){
-  // A rough, recessed core fills distant crowns; 56 folded lanceolate leaves create
+export function createFoliageGeometry(){
+  // A rough, recessed core fills distant crowns; 64 layered, folded lanceolate leaves create
   // the actual silhouette and the small changing highlights visible while driving.
-  const core=new T.SphereGeometry(.77,8,5).toNonIndexed(),positions=[],normals=[],colors=[];
+  const core=new T.SphereGeometry(.69,8,5).toNonIndexed(),positions=[],normals=[],colors=[];
   const cp=core.getAttribute('position'),cn=core.getAttribute('normal');
   for(let i=0;i<cp.count;i++){
     const x=cp.getX(i),y=cp.getY(i),z=cp.getZ(i),rough=1+.05*Math.sin(x*19+y*11+z*23),shade=.67+.12*hash(i/3);
@@ -15,12 +15,12 @@ function foliageGeometry(){
   }
   core.dispose();
   const n=new T.Vector3(),u=new T.Vector3(),v=new T.Vector3(),point=new T.Vector3(),center=new T.Vector3(),normal=new T.Vector3(),edgeA=new T.Vector3(),edgeB=new T.Vector3();
-  const count=56,golden=Math.PI*(3-Math.sqrt(5));
+  const count=64,golden=Math.PI*(3-Math.sqrt(5));
   for(let i=0;i<count;i++){
     const y=1-2*(i+.5)/count,r=Math.sqrt(1-y*y),angle=i*golden;n.set(Math.cos(angle)*r,y,Math.sin(angle)*r);
     u.crossVectors(Math.abs(y)>.9?new T.Vector3(1,0,0):UP,n).normalize();v.crossVectors(n,u);
     const turn=hash(i+5)*Math.PI*2,cos=Math.cos(turn),sin=Math.sin(turn),oldU=u.clone();u.multiplyScalar(cos).addScaledVector(v,sin);v.multiplyScalar(cos).addScaledVector(oldU,-sin);
-    center.copy(n).multiplyScalar(.875+hash(i+19)*.045);
+    center.copy(n).multiplyScalar(i%3===0?.69+hash(i+19)*.065:.86+hash(i+19)*.08);
     const length=.23+hash(i+37)*.055,width=.105+hash(i+47)*.035;
     const outline=[[0,length,0],[-width,.018,0],[0,-length*.88,-.005],[width,.018,0]],ridge=[0,.012,.036];
     const leafPoints=[ridge,...outline].map(([x,y,z])=>point.copy(center).addScaledVector(u,x).addScaledVector(v,y).addScaledVector(n,z).clone());
@@ -60,6 +60,26 @@ function addWind(material,clock,strength){
       .replace('#include <begin_vertex>',`#include <begin_vertex>\n#ifdef USE_INSTANCING\nfloat urbanSeed=dot(instanceMatrix[3].xz,vec2(2.1,3.7));\ntransformed.x += sin(uUrbanTime*1.35+urbanSeed+position.y*1.6)*${strength.toFixed(4)}*max(0.0,position.y)*max(0.0,position.y);\n#endif`);
   };material.customProgramCacheKey=()=>`urban-wind-${strength}`;
 }
+/** Coherent branch bending is shared by every crown on one tree; leaf tips flutter separately. */
+function addTreeWind(material,clock,{leaves=false,reducedMotion=false}={}){
+  material.onBeforeCompile=shader=>{
+    shader.uniforms.uUrbanTime=clock;shader.uniforms.uTreeWind={value:reducedMotion?0:1};
+    shader.vertexShader=shader.vertexShader.replace('#include <common>',`#include <common>
+      uniform float uUrbanTime;uniform float uTreeWind;attribute vec4 urbanTree;`)
+      .replace('#include <begin_vertex>',`#include <begin_vertex>
+      #ifdef USE_INSTANCING
+      vec3 treePoint=(instanceMatrix*vec4(position,1.)).xyz;
+      float treeHeight=clamp((treePoint.y-urbanTree.y)/max(.01,urbanTree.w)/2.8,0.,1.);
+      float treeSeed=dot(urbanTree.xz,vec2(.27,.39));
+      float gust=(sin(uUrbanTime*.85+treeSeed)-sin(treeSeed))*.022+(sin(uUrbanTime*1.55+treeSeed*.7)-sin(treeSeed*.7))*.009;
+      vec3 treeShift=vec3(gust,0.,gust*.37)*pow(treeHeight,1.55)*urbanTree.w*uTreeWind;
+      ${leaves?`float leafPhase=dot(position,vec3(11.3,8.7,13.9))+treeSeed;
+      float leafFlutter=(sin(uUrbanTime*3.4+leafPhase)-sin(leafPhase))*.008*uTreeWind;
+      treeShift+=vec3(leafFlutter,leafFlutter*.18,leafFlutter*.4)*urbanTree.w;`:''}
+      transformed+=vec3(dot(treeShift,instanceMatrix[0].xyz)/max(.0001,dot(instanceMatrix[0].xyz,instanceMatrix[0].xyz)),dot(treeShift,instanceMatrix[1].xyz)/max(.0001,dot(instanceMatrix[1].xyz,instanceMatrix[1].xyz)),dot(treeShift,instanceMatrix[2].xyz)/max(.0001,dot(instanceMatrix[2].xyz,instanceMatrix[2].xyz)));
+      #endif`);
+  };material.customProgramCacheKey=()=>`urban-branched-wind-${leaves}-${reducedMotion}`;
+}
 function addRoomLife(material,clock){
   material.onBeforeCompile=shader=>{
     shader.uniforms.uUrbanTime=clock;
@@ -87,14 +107,14 @@ export function createUrbanNature({scene,treePositions=[],grassPatches=[],buildi
   function mat(color,extra={}){const m=new T.MeshStandardMaterial({color,roughness:.84,metalness:0,...extra});materials.add(m);return m;}
   function batch(name,g,m,n){const mesh=new T.InstancedMesh(g,m,n);mesh.name=name;mesh.count=n;mesh.castShadow=false;mesh.receiveShadow=true;root.add(mesh);batches.push(mesh);return mesh;}
   const bark=mat('#776950',{roughness:1}),leaf=mat('#d2e4c6',{roughness:.96,vertexColors:true,side:T.DoubleSide}),grassMat=mat('#829d66',{side:T.DoubleSide,roughness:1,vertexColors:true});
-  addWind(leaf,clock,.011);addWind(grassMat,clock,.32);
+  addTreeWind(leaf,clock,{leaves:true,reducedMotion});addTreeWind(bark,clock,{reducedMotion});addWind(grassMat,clock,.32);
   const stone=mat('#9caa9f',{roughness:.8,metalness:.1}),trimMat=mat('#566869',{roughness:.48,metalness:.45}),roofMat=mat('#697577',{roughness:.9}),mechanicalMat=mat('#8d9e9d',{roughness:.65,metalness:.4});
   const glassMat=mat('#2b4a4d',{emissive:'#f2c387',emissiveIntensity:.62,roughness:.32,metalness:.18,side:T.DoubleSide});addRoomLife(glassMat,clock);
   const shadowMat=new T.MeshBasicMaterial({color:'#182b2d',side:T.DoubleSide});materials.add(shadowMat);
   const doorMat=mat('#324d50',{roughness:.3,metalness:.35});
   const cylinder=own(new T.CylinderGeometry(.65,1,1,7)),cube=own(new T.BoxGeometry(1,1,1)),plane=own(new T.PlaneGeometry(1,1));
-  const trunks=batch('Branched coastal trunks',cylinder,bark,trees.length*5);
-  const foliage=batch('Layered leafy crowns',own(foliageGeometry()),leaf,trees.length*5);
+  const trunks=batch('Branched coastal trunks',cylinder,bark,trees.length*13);
+  const foliage=batch('Layered leafy crowns',own(createFoliageGeometry()),leaf,trees.length*5);
   const grass=batch('Wind grass clumps',own(bladeGeometry()),grassMat,grassSites.length*6);
   const roofCaps=batch('Architectural cornices and plinths',cube,stone,blocks.length*2);
   const trim=batch('Facade corner piers',cube,trimMat,blocks.length*4);
@@ -104,13 +124,16 @@ export function createUrbanNature({scene,treePositions=[],grassPatches=[],buildi
   const position=new T.Vector3(),scale=new T.Vector3(),rotation=new T.Euler(),quaternion=new T.Quaternion(),matrix=new T.Matrix4(),direction=new T.Vector3(),color=new T.Color();
   function put(mesh,i,x,y,z,sx,sy,sz,ry=0){position.set(x,y,z);scale.set(sx,sy,sz);quaternion.setFromEuler(rotation.set(0,ry,0));matrix.compose(position,quaternion,scale);mesh.setMatrixAt(i,matrix);}
   function rod(i,a,b,r){direction.copy(b).sub(a);const length=direction.length();quaternion.setFromUnitVectors(UP,direction.multiplyScalar(1/length));position.copy(a).add(b).multiplyScalar(.5);scale.set(r,length,r);matrix.compose(position,quaternion,scale);trunks.setMatrixAt(i,matrix);}
-  const crown=[[0,2.0,0,.53,.86,.53],[-.34,1.68,.04,.39,.63,.39],[.34,1.77,.03,.39,.66,.39],[.02,1.7,-.34,.39,.65,.39],[-.02,1.84,.34,.39,.65,.39]];
+  const crown=[[0,2.0,0,.48,.86,.48],[-.31,1.68,.04,.35,.63,.35],[.31,1.77,.03,.35,.66,.35],[.02,1.7,-.31,.35,.65,.35],[-.02,1.84,.31,.35,.65,.35]];
   const a=new T.Vector3(),b=new T.Vector3();
   trees.forEach((p,i)=>{
     a.set(p.x,BASE,p.z);b.set(p.x,BASE+1.54*p.s,p.z);rod(i,a,b,.09*p.s);
-    for(let fork=0;fork<4;fork++){const c=crown[fork+1];a.set(p.x,BASE+(.92+.05*fork)*p.s,p.z);b.set(p.x+c[0]*p.s,BASE+(c[1]-.16)*p.s,p.z+c[2]*p.s);rod((fork+1)*trees.length+i,a,b,.047*p.s);}
+    for(let fork=0;fork<4;fork++){const c=crown[fork+1];a.set(p.x,BASE+(.92+.05*fork)*p.s,p.z);b.set(p.x+c[0]*p.s,BASE+(c[1]-.16)*p.s,p.z+c[2]*p.s);rod((fork+1)*trees.length+i,a,b,.047*p.s);
+      for(let twig=0;twig<2;twig++){const turn=hash(i*23+fork*7+twig)*Math.PI*2,tip=b.clone().add(new T.Vector3(Math.cos(turn)*.19*p.s,(.17+twig*.07)*p.s,Math.sin(turn)*.19*p.s));rod((5+fork*2+twig)*trees.length+i,b,tip,.023*p.s);}
+    }
     for(let layer=0;layer<5;layer++){const c=crown[layer],j=layer*trees.length+i;put(foliage,j,p.x+c[0]*p.s,BASE+c[1]*p.s,p.z+c[2]*p.s,c[3]*p.s,c[4]*p.s,c[5]*p.s);foliage.setColorAt(j,color.setHSL(.29+hash(i*5+layer)*.085,.22+hash(i+layer*31)*.16,.25+hash(i*2+layer)*.11));}
   });
+  for(const mesh of [trunks,foliage]){const anchors=new Float32Array(mesh.count*4);for(let i=0;i<mesh.count;i++){const p=trees[i%trees.length];anchors.set([p.x,BASE,p.z,p.s],i*4);}mesh.geometry.setAttribute('urbanTree',new T.InstancedBufferAttribute(anchors,4));}
   grassSites.forEach((p,i)=>{
     for(let layer=0;layer<6;layer++){const angle=layer*Math.PI/3+hash(i)*.8,r=(.4+hash(i*13+layer)*.22)*p.s,j=layer*grassSites.length+i;put(grass,j,p.x+Math.cos(angle)*r,BASE+.005,p.z+Math.sin(angle)*r,(.065+hash(i+layer)*.03)*p.s,(.18+hash(i*9+layer)*.17)*p.s,.12*p.s,angle);grass.setColorAt(j,color.setHSL(.2+hash(i+layer)*.1,.22,.4+hash(i*7+layer)*.14));}
   });

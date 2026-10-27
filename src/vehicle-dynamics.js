@@ -11,6 +11,43 @@ function spring(position,velocity,target,dt,omega,damping) {
   return [target+decay*(offset*cos+b*sin),decay*((-alpha*offset+beta*b)*cos+(-alpha*b-beta*offset)*sin)];
 }
 
+/** Whole-vehicle impact flight. Add these offsets to the fresh grounded pose. */
+export function createVehicleHop({reducedMotion=false,maxHeight=.72,gravity=10.5}={}) {
+  maxHeight=clamp(Number.isFinite(maxHeight)?maxHeight:.72,.4,1);
+  gravity=clamp(Number.isFinite(gravity)?gravity:10.5,7,18);
+  let age=0,origin=0,launch=0,duration=0,height=0,verticalVelocity=0,airborne=false,cooldown=0;
+  const state=()=>{
+    const lift=maxHeight?height/maxHeight:0,phase=duration?age/duration:1;
+    return {height,verticalVelocity,airborne,pitch:height?lift*Math.sin(phase*Math.PI*2)*.045:0,roll:height?lift*Math.sin(phase*Math.PI*3)*.055:0};
+  };
+  function reset(){age=origin=launch=duration=height=verticalVelocity=cooldown=0;airborne=false;return state();}
+  return {
+    state,reset,
+    trigger(intensity=1){
+      const strength=clamp(Number.isFinite(intensity)?intensity:0,0,1);
+      if(reducedMotion||!strength||cooldown>0)return false;
+      // Every visible hit has enough lift to read clearly, while overlapping hits
+      // can never ratchet the vehicle beyond one bounded flight envelope.
+      const peak=Math.min(maxHeight,.45+strength*.23);
+      origin=height;launch=Math.sqrt(2*gravity*Math.max(0,peak-origin));age=0;
+      duration=(launch+Math.sqrt(launch*launch+2*gravity*origin))/gravity;
+      verticalVelocity=launch;airborne=duration>0;cooldown=.08;return airborne;
+    },
+    update(dt=0,{paused=false}={}){
+      if(reducedMotion)return reset();
+      if(paused||!Number.isFinite(dt)||dt<=0)return state();
+      if(dt>.25)return reset();
+      cooldown=Math.max(0,cooldown-dt);
+      if(!airborne)return state();
+      age=Math.min(duration,age+dt);
+      height=clamp(origin+launch*age-gravity*age*age/2,0,maxHeight);
+      verticalVelocity=launch-gravity*age;
+      if(age>=duration-1e-9){height=verticalVelocity=0;airborne=false;}
+      return state();
+    },
+  };
+}
+
 /** Pure braking-response spring; pitch is positive for a forward nose dive. */
 export function createBrakeDynamics({maxPitch=.105,maxHeave=.06,frequency=3.4,damping=.42,reducedMotion=false}={}) {
   maxPitch=Math.max(0,maxPitch);maxHeave=Math.max(0,maxHeave);frequency=clamp(frequency,.5,8);damping=clamp(damping,.15,.95);

@@ -116,6 +116,31 @@ test('skyway planting and solar lights stay bounded and clear of lanes and city 
   }
   const stage = createBayRaceScene({ scene: new Scene(), curve: createRaceCurve({ height: 9 }), createCar: carModel });
   const meshes = stage.root.children.filter(child => child.name.startsWith('Skyway '));
-  assert.equal(meshes.length, 10); assert.ok(meshes.every(mesh => mesh.isInstancedMesh));
-  assert.equal(stage.root.userData.landscape.batches, 10); stage.dispose();
+  assert.equal(meshes.length, 11); assert.ok(meshes.every(mesh => mesh.isInstancedMesh));
+  assert.equal(stage.root.userData.landscape.batches, 11); stage.dispose();
+});
+
+test('boost pads render only in their own lane with upward chevrons and a bounded activation flash',()=>{
+ const curve=circle(),stage=createBayRaceScene({scene:new Scene(),curve,createCar:carModel});stage.setVisible(true);
+ const pads=[{id:'p0',progress:.2,lane:-2.75,lastTriggeredAt:-Infinity},{id:'p1',progress:.7,lane:2.75,lastTriggeredAt:1}];
+ stage.update({phase:'racing',elapsed:1.1,pads,rivals:[]},1.1);
+ const plates=stage.root.getObjectByName('Boost pad plates'),arrows=stage.root.getObjectByName('Boost pad chevrons');
+ assert.equal(plates.count,2);assert.equal(arrows.count,6);assert.equal(stage.root.userData.boostPads.batches,2);
+ const matrix=new (plates.matrixWorld.constructor)(),point=new Vector3();
+ pads.forEach((pad,i)=>{plates.getMatrixAt(i,matrix);point.setFromMatrixPosition(matrix);const f=raceFrame(curve,pad.progress,pad.lane);near(point.x,f.point.x);near(point.y,f.point.y+.03);near(point.z,f.point.z);});
+ for(let i=0;i<arrows.geometry.attributes.normal.count;i++)assert.ok(arrows.geometry.attributes.normal.getY(i)>.99,'Boost arrows face the driver above the road');
+ const bright=arrows.instanceColor.getX(3);stage.update({phase:'racing',elapsed:3,pads,rivals:[]},3);assert.ok(arrows.instanceColor.getX(3)<bright,'Activation flash ends instead of staying overbright');
+ stage.update({phase:'racing',elapsed:3,pads:Array.from({length:100},(_,i)=>({...pads[0],id:`p${i}`})),rivals:[]},3);assert.equal(plates.count,16);assert.equal(arrows.count,48);stage.dispose();
+});
+
+test('race trees use layered leaves and branch-root attributes with reduced-motion-aware shared wind',()=>{
+ for(const reducedMotion of [false,true]){
+  const stage=createBayRaceScene({scene:new Scene(),curve:circle(),createCar:carModel,reducedMotion});
+  const leaves=stage.root.getObjectByName('Skyway broadleaf canopies'),trunks=stage.root.getObjectByName('Skyway tree trunks'),branches=stage.root.getObjectByName('Skyway tree branches');
+  assert.ok(leaves.geometry.attributes.color&&leaves.geometry.attributes.position.count>900,'Individual folded leaves give the crown actual depth');assert.equal(leaves.material.vertexColors,true);
+  for(const mesh of [leaves,trunks,branches]){
+   assert.equal(mesh.geometry.attributes.circuitRoot.count,mesh.count);const shader={uniforms:{},vertexShader:'#include <common>\n#include <begin_vertex>'};mesh.material.onBeforeCompile(shader);assert.equal(shader.uniforms.uCircuitWind.value,reducedMotion?0:1);assert.ok(shader.vertexShader.includes('circuitRoot'));
+  }
+  assert.ok(stage.root.userData.landscape.branches>0);stage.dispose();
+ }
 });
