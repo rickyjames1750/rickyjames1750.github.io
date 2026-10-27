@@ -13,6 +13,8 @@ An interactive portfolio set in a miniature San Francisco Bay Area. Explore prof
 - **Sound:** adjust volume, music, world ambience and vehicle effects independently in Audio mix. Preferences persist across visits.
 - **Classic view:** read all portfolio content without driving.
 
+The optional **Bay Circuit** is a three-lap scenic race with three computer-controlled rivals, automatic acceleration, touch steering, boost, and a finish leaderboard. A run takes roughly 90 seconds, and the portfolio remains one click away.
+
 ## Development
 
 Requires Node.js 22 or later.

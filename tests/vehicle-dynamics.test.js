@@ -15,11 +15,11 @@ test('braking response is frame-rate stable and settles promptly after release',
   for(const fps of [15,30,60,120]){const actual=run(fps);close(actual.peak.pitch,reference.peak.pitch);close(actual.peak.heave,reference.peak.heave);assert.ok(Math.abs(actual.rest.pitch)<.00005);assert.ok(Math.abs(actual.rest.heave)<.00003);}
 });
 
-test('significant braking has a bounded nose dive followed by a small rebound',()=>{
+test('significant braking has a strong bounded nose dive followed by a controlled rebound',()=>{
   const spring=createBrakeDynamics();let max=0,rebound=0;
-  for(let i=0;i<36;i++){const value=spring.update({dt:1/120,speed:10-i/120*12,acceleration:-12,braking:true});max=Math.max(max,value.pitch);assert.ok(Math.abs(value.pitch)<=.035&&Math.abs(value.heave)<=.018);}
+  for(let i=0;i<36;i++){const value=spring.update({dt:1/120,speed:10-i/120*12,acceleration:-12,braking:true});max=Math.max(max,value.pitch);assert.ok(Math.abs(value.pitch)<=.105&&Math.abs(value.heave)<=.06);}
   for(let i=0;i<180;i++){const value=spring.update({dt:1/120,speed:6.4,acceleration:0});rebound=Math.min(rebound,value.pitch);}
-  assert.ok(max>.015);assert.ok(rebound<-.0001&&rebound>-.008,'release rebounds subtly, without a large oscillation');
+  assert.ok(max>.015);assert.ok(rebound<-.0001&&rebound>-.05,'release rebounds visibly while remaining bounded');
   assert.ok(Math.abs(spring.state().pitch)<.00005);
 });
 
@@ -49,4 +49,23 @@ test('chassis animation leaves measured wheels, terrain orientation, and tire co
   car.userData.wheels.forEach((wheel,i)=>{assert.equal(wheel.parent,car);close(wheel.getWorldPosition(new Vector3()).distanceTo(wheelPositions[i]),0);});
   close(car.quaternion.angleTo(rootQuaternion),0);controller.reset();assert.equal(controller.body.rotation.x,0);
   controller.dispose();assert.equal(controller.body.parent,null);
+});
+
+
+test('container impacts shake only the chassis, settle quickly, and obey reduced motion',()=>{
+ const car=carModel();groundVehicle(car,{scale:.4,sampleHeight:()=>.79,yaw:0});car.updateMatrixWorld(true);
+ const wheels=car.userData.wheels.map(w=>w.getWorldPosition(new Vector3())),controller=createVehicleDynamics(car);
+ assert.equal(controller.impact(1),true);let peak=0;
+ for(let i=0;i<60;i++){const value=controller.update({dt:1/60,speed:8,acceleration:0});peak=Math.max(peak,Math.abs(value.roll));assert.ok(Math.abs(value.roll)<=.115);}
+ assert.ok(peak>.05,'A strong hit gives the body a readable side-to-side jolt');assert.equal(controller.state().shake,0);
+ car.updateMatrixWorld(true);car.userData.wheels.forEach((w,i)=>close(w.getWorldPosition(new Vector3()).distanceTo(wheels[i]),0));
+ controller.impact(1);controller.update({dt:1/60,paused:true});assert.equal(controller.state().shake,0);
+ const reduced=createVehicleDynamics(carModel(),{reducedMotion:true});assert.equal(reduced.impact(1),false);assert.equal(reduced.update({dt:1/60,speed:9,acceleration:-24,braking:true}).shake,0);
+});
+
+test('holding the brake triggers one finite shake rather than ongoing vibration',()=>{
+ const controller=createVehicleDynamics(carModel());let peak=0;
+ for(let i=0;i<100;i++){const value=controller.update({dt:1/60,speed:10,acceleration:-12,braking:true});peak=Math.max(peak,value.shake);}
+ assert.ok(peak>.5);assert.equal(controller.state().shake,0);
+ controller.reset();assert.equal(controller.body.rotation.z,0);assert.equal(controller.body.position.x,0);
 });

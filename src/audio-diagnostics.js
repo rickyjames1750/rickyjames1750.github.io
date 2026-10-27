@@ -20,25 +20,41 @@ export function audioBufferWav(buffer) {
   return new Blob([view], {type: 'audio/wav'});
 }
 
+export const DIAGNOSTIC_STEMS = ['idle-effects','music','motor','train','drone','birds','actions','focus','reveal','race','combined'];
+
+/** Fixed event times make isolated listening and combined headroom repeatable. */
+export function diagnosticCuesAt(stem,tick) {
+  if (stem==='focus'||stem==='reveal') return tick===10?[['transition',stem]]:[];
+  if (stem==='race') {
+    const events={10:'countdown',30:'countdown',50:'countdown',70:'go',100:'lap',124:'finish'};
+    return events[tick]?[['raceCue',events[tick]]]:[];
+  }
+  if (stem==='actions'||stem==='combined') {
+    return ({5:[['transition','focus']],40:[['transition','reveal']],72:[['raceCue','go']],106:[['impact',.7]],128:[['raceCue','finish']]})[tick]||[];
+  }
+  return [];
+}
+
 /** Same production graph, deterministic telemetry and audio clock; no device playback. */
 export async function renderAudioDiagnostics({duration = 8, sampleRate = 24000, onStem = () => {}} = {}) {
   const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
   if (!Offline) throw new Error('This browser does not support offline audio rendering.');
   const names = ['music', 'motor', 'train', 'drone', 'birds', 'actions'];
   const results = [];
-  for (const stem of ['idle-effects', ...names, 'combined']) {
+  for (const stem of DIAGNOSTIC_STEMS) {
     const context = new Offline(2, Math.round(duration * sampleRate), sampleRate);let time = 0;
     const audio = createAmbience({offlineContext: context, clock: () => time, manualScheduling: true});
-    await audio.start();audio.isolateSources(stem === 'combined' ? names : stem === 'idle-effects' ? names.filter(name => name !== 'music') : [stem]);
+    const actionOnly=['focus','reveal','race'].includes(stem);
+    await audio.start();audio.isolateSources(stem === 'combined' ? names : stem === 'idle-effects' ? names.filter(name => name !== 'music') : actionOnly?['actions']:[stem]);
     for (let tick = 0; tick < duration * 20; tick++) {
-      time = tick / 20;const idle = stem === 'idle-effects';
+      time = tick / 20;const idle = stem === 'idle-effects'||actionOnly;
       const speed = idle || time < 1 || time >= 5 ? 0 : time < 3 ? (time - 1) * 6 : time < 4 ? 12 : (5 - time) * 12;
       audio.setMotion(speed, 'car', {
         trainDistance: idle ? Infinity : 3 + Math.abs(time - 3) * 13, trainSpeed: 5, trainPan: (time - 3) / 3,
         droneDistance: idle ? Infinity : 2 + Math.abs(time - 2.5) * 8, droneSpeed: .7, dronePan: (2.5 - time) / 2,
         birdActivity: idle ? 0 : .6, braking: !idle && time >= 4 && time < 5,
       });
-      if (!idle && tick === 106) await audio.impact(.7);
+      for (const [method,value] of diagnosticCuesAt(stem,tick)) await audio[method](value);
       audio.diagnosticTick();
     }
     const buffer = await context.startRendering(), result = {stem, buffer, metrics: measureAudio(buffer)};

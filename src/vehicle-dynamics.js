@@ -12,7 +12,7 @@ function spring(position,velocity,target,dt,omega,damping) {
 }
 
 /** Pure braking-response spring; pitch is positive for a forward nose dive. */
-export function createBrakeDynamics({maxPitch=.035,maxHeave=.018,frequency=2.8,damping=.58,reducedMotion=false}={}) {
+export function createBrakeDynamics({maxPitch=.105,maxHeave=.06,frequency=3.4,damping=.42,reducedMotion=false}={}) {
   maxPitch=Math.max(0,maxPitch);maxHeave=Math.max(0,maxHeave);frequency=clamp(frequency,.5,8);damping=clamp(damping,.15,.95);
   const omega=2*Math.PI*frequency;
   let pitch=0,pitchVelocity=0,heave=0,heaveVelocity=0,previousSpeed=0;
@@ -57,13 +57,30 @@ export function createVehicleDynamics(car,options={}) {
   const pivot=new Vector3(0,.85,0),parts=car.children.filter(child=>!wheels.includes(child));
   body.position.copy(pivot);car.add(body);
   for(const part of parts){part.position.sub(pivot);body.add(part);}
-  const dynamics=createBrakeDynamics(options);let disposed=false;
-  const apply=value=>{body.rotation.set(value.pitch,0,0);body.position.set(pivot.x,pivot.y-value.heave,pivot.z);return value;};
+  const dynamics=createBrakeDynamics(options);let disposed=false,brakingBefore=false,lastSpeed=0,joltAge=1,joltStrength=0,joltDuration=.85,applied=dynamics.state();
+  const apply=value=>{
+    const envelope=options.reducedMotion||joltAge>=joltDuration?0:joltStrength*Math.pow(1-joltAge/joltDuration,2);
+    const roll=envelope?Math.sin(joltAge*69)*envelope*.115:0,shakePitch=envelope?Math.sin(joltAge*53)*envelope*.055:0;
+    body.rotation.set(value.pitch+shakePitch,Math.sin(joltAge*43)*envelope*.022,roll);
+    body.position.set(pivot.x+Math.sin(joltAge*81)*envelope*.075,pivot.y-value.heave+Math.sin(joltAge*59)*envelope*.045,pivot.z);
+    applied={...value,roll,shake:envelope};return applied;
+  };
+  const jolt=(strength,duration)=>{if(disposed||options.reducedMotion)return false;joltStrength=Math.max(joltStrength*(1-Math.min(1,joltAge/joltDuration)),clamp(Number.isFinite(strength)?strength:0,0,1));joltDuration=duration;joltAge=0;return joltStrength>0;};
   const controller={
     body,
-    update(input){return disposed?dynamics.state():apply(dynamics.update(input));},
-    reset(){return apply(dynamics.reset());},
-    state:()=>dynamics.state(),
+    update(input={}){
+      if(disposed)return applied;
+      const speed=Math.abs(input.speed||0),braking=Boolean(input.braking);
+      if(input.paused||input.dt>.25){joltAge=1;joltStrength=0;brakingBefore=false;lastSpeed=0;}
+      else {
+        if(braking&&!brakingBefore&&Math.max(speed,lastSpeed)>1.5)jolt(.62,.52);
+        joltAge+=Math.max(0,Math.min(.1,input.dt||0));brakingBefore=braking;lastSpeed=speed;
+      }
+      return apply(dynamics.update(input));
+    },
+    impact(intensity=1){return jolt(intensity,.85);},
+    reset(){joltAge=1;joltStrength=0;brakingBefore=false;lastSpeed=0;return apply(dynamics.reset());},
+    state:()=>applied,
     dispose(){
       if(disposed)return;controller.reset();disposed=true;
       for(const part of [...body.children]){part.position.add(pivot);car.add(part);}

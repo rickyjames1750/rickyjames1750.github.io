@@ -258,6 +258,7 @@ export function createPlayground({scene, roadCurve, bridgeDrive, sampleHeight, r
   }
   renderPods();
   return {
+    root,
     update({dt = 0, carPosition, carSpeed = 0, paused = false, quality = 'high'} = {}) {
       if (disposed) return;
       const step = Number.isFinite(dt) ? clamp(dt, 0, .1) : 0;

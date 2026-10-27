@@ -13,7 +13,7 @@ export function createAmbience({offlineContext, clock, manualScheduling = false}
   const targets = {motor: 0, road: 0, braking: 0, train: 0, drone: 0};
   let requested = false, paused = false, destroyed = false, unavailable = false;
   let musicTimer, suspendTimer, chordIndex = 0, attempts = 0, nextStepTime = null, musicStep = 0, nextBirdTime = 1.5;
-  let motion = 0, travelMode = 'car', lastState = '', motionTime = null, acceleration = 0, braking = 0, lastHornTime = -Infinity, lastImpactTime = -Infinity, impactBuffer, activeImpacts = 0;
+  let motion = 0, travelMode = 'car', lastState = '', motionTime = null, acceleration = 0, braking = 0, lastHornTime = -Infinity, lastImpactTime = -Infinity, lastBrakeTime = -Infinity, lastTransitionTime = -Infinity, lastRaceCueTime = {}, activeRaceCues = 0, raceCueSlots = [], impactBuffer, skidBuffer, activeImpacts = 0, activeTransitions = 0, brakeHeld = false;
   let environment = {trainDistance: Infinity, trainSpeed: 14, trainPan: 0, trainApproach: 0, droneDistance: Infinity, dronePan: 0, droneSpeed: 0, birdActivity: .6};
   let droneArmed = true, droneStart = -Infinity, droneUntil = -Infinity, droneRearmAt = 0, previousDroneDistance = Infinity, droneRelativeSpeed = 0;
   const sources = [], transients = new Set(), scoreNotes = new Set(), padPairs = [], listeners = new Set(), resumeTimers = new Map();
@@ -243,7 +243,7 @@ export function createAmbience({offlineContext, clock, manualScheduling = false}
     targets.road = paused || speed < .4 ? 0 : Math.pow(normalized, 1.3) * (train ? 0.008 : 0.006);
     roadGain.gain.setTargetAtTime(targets.road, audioTime(), 0.16);
     regenFilter.frequency.setTargetAtTime(1800 + regen * 2000, audioTime(), 0.08);
-    targets.braking = regen * Math.min(1, (speed + 1.5) / 6) * .012;
+    targets.braking = speed < .4 ? 0 : regen * Math.min(1, speed / 6) * .012;
     regenGain.gain.setTargetAtTime(targets.braking, audioTime(), regen > 0 ? 0.05 : 0.18);
     trainGain.gain.setTargetAtTime(train ? level * 0.025 : 0, audioTime(), 0.3);
     const trainProximity = paused || train || environment.trainSpeed < .4 ? 0 : proximity(environment.trainDistance, 24) * .6;
@@ -286,7 +286,10 @@ export function createAmbience({offlineContext, clock, manualScheduling = false}
       droneDistance, dronePan: clamp(Number.isFinite(telemetry.dronePan) ? telemetry.dronePan : 0, -1, 1),
       droneSpeed: clamp(Number.isFinite(telemetry.droneSpeed) ? Math.abs(telemetry.droneSpeed) : 0, 0, 14), birdActivity: clamp(Number.isFinite(telemetry.birdActivity) ? telemetry.birdActivity : .6, 0, 1),
     };
+    const brakeEdge = explicitBrake >= .5 && !brakeHeld && Math.max(Math.abs(motion), Math.abs(next)) > 1.5;
+    brakeHeld = explicitBrake >= .5;
     motion = next;travelMode = mode;motionTime = now;updateMotion();
+    if (brakeEdge && mode !== 'train') brake(Math.min(1, Math.max(Math.abs(next), Math.abs(next - inferred * elapsed)) / 12));
   }
   async function horn() {
     if (!mix.effects || !await attemptStart(false) || paused || audioTime() - lastHornTime < 0.22) return false;
@@ -305,29 +308,92 @@ export function createAmbience({offlineContext, clock, manualScheduling = false}
     return true;
   }
   async function impact(intensity = 1) {
-    const strength = Math.max(0, Math.min(1, Number.isFinite(intensity) ? intensity : 0));
-    if (!strength) return false;
-    if (!mix.effects || paused || activeImpacts >= 2 || !await attemptStart(false) || audioTime() - lastImpactTime < 0.2) return false;
+    const strength = clamp(Number.isFinite(intensity) ? intensity : 0, 0, 1);
+    if (!strength || !mix.effects || paused || (!isEnabled() && !await attemptStart(false))) return false;
+    if (activeImpacts >= 2 || audioTime() - lastImpactTime < .2) return false;
     const time = audioTime();lastImpactTime = time;
-    // A broad fireball whoosh, low thump, and descending energy crack. Two bounded
-    // overlaps leave space for the score and avoid a wall of competing effects.
-    impactBuffer ||= noiseBuffer(0.65, true);activeImpacts++;
+    // A cannon-like pressure crack drops into a deep powder boom. The tail is
+    // finite and two simultaneous hits share the same mastered output.
+    impactBuffer ||= noiseBuffer(1.05, true);activeImpacts++;
     const noise = context.createBufferSource(), note = context.createOscillator(), crack = context.createOscillator();noise.buffer = impactBuffer;
-    const filter = context.createBiquadFilter(), body = gain(0.72), sparkle = gain(.18), envelope = gain(0);
-    filter.type = 'lowpass';filter.frequency.setValueAtTime(3500 + strength * 1400, time);filter.frequency.exponentialRampToValueAtTime(380, time + .5);filter.Q.value = .5;
-    note.type = 'triangle';note.frequency.setValueAtTime(160 + strength * 70, time);note.frequency.exponentialRampToValueAtTime(48, time + .42);
-    crack.type = 'sine';crack.frequency.setValueAtTime(850 + strength * 350, time);crack.frequency.exponentialRampToValueAtTime(120, time + .2);
-    noise.connect(filter).connect(envelope);note.connect(body).connect(envelope);crack.connect(sparkle).connect(envelope);envelope.connect(sourceBuses.actions);
-    const peak = 0.07 + strength * 0.09;
-    envelope.gain.setValueAtTime(0, time);envelope.gain.linearRampToValueAtTime(peak, time + 0.006);
-    envelope.gain.exponentialRampToValueAtTime(0.0001, time + 0.6);
+    const filter = context.createBiquadFilter(), body = gain(.98), debris = gain(.22), envelope = gain(0);
+    filter.type = 'lowpass';filter.frequency.setValueAtTime(5000, time);filter.frequency.exponentialRampToValueAtTime(180, time + .8);filter.Q.value = .7;
+    note.type = 'sine';note.frequency.setValueAtTime(116 + strength * 42, time);note.frequency.exponentialRampToValueAtTime(37, time + .68);
+    crack.type = 'triangle';crack.frequency.setValueAtTime(370 + strength * 70, time);crack.frequency.exponentialRampToValueAtTime(76, time + .18);
+    noise.connect(filter).connect(envelope);note.connect(body).connect(envelope);crack.connect(debris).connect(envelope);envelope.connect(sourceBuses.actions);
+    const peak = .22 + strength * .16;
+    envelope.gain.setValueAtTime(0, time);envelope.gain.linearRampToValueAtTime(peak, time + .003);
+    envelope.gain.exponentialRampToValueAtTime(peak * .34, time + .16);envelope.gain.exponentialRampToValueAtTime(.0001, time + 1);
     let finished = 0;
     for (const source of [noise, note, crack]) {
       transients.add(source);source.onended = () => {
         transients.delete(source);source.disconnect();
-        if (++finished === 3) {activeImpacts = Math.max(0, activeImpacts - 1);filter.disconnect();body.disconnect();sparkle.disconnect();envelope.disconnect();}
+        if (++finished === 3) {activeImpacts = Math.max(0, activeImpacts - 1);filter.disconnect();body.disconnect();debris.disconnect();envelope.disconnect();}
       };
-      source.start(time);source.stop(time + 0.65);
+      source.start(time);source.stop(time + 1.05);
+    }
+    return true;
+  }
+  async function brake(intensity = 1) {
+    const strength = clamp(Number.isFinite(intensity) ? intensity : 0, 0, 1);
+    if (!strength || !mix.effects || paused || (!isEnabled() && !await attemptStart(false))) return false;
+    const time = audioTime();if (time - lastBrakeTime < .55) return false;lastBrakeTime = time;
+    // One sharp tire squeal with a heavy suspension knock. Holding the brake
+    // cannot create a perpetual hiss; every source ends within half a second.
+    skidBuffer ||= noiseBuffer(.5, true);
+    const noise = context.createBufferSource(), squeal = context.createOscillator(), knock = context.createOscillator();noise.buffer = skidBuffer;
+    const band = context.createBiquadFilter(), envelope = gain(0), squealGain = gain(.46), knockGain = gain(.5);
+    band.type = 'bandpass';band.frequency.setValueAtTime(2100, time);band.frequency.exponentialRampToValueAtTime(650, time + .4);band.Q.value = 1.6;
+    squeal.type = 'triangle';squeal.frequency.setValueAtTime(970 + strength * 250, time);squeal.frequency.exponentialRampToValueAtTime(430, time + .42);
+    knock.type = 'sine';knock.frequency.setValueAtTime(135, time);knock.frequency.exponentialRampToValueAtTime(43, time + .13);
+    noise.connect(band).connect(envelope);squeal.connect(squealGain).connect(envelope);knock.connect(knockGain).connect(envelope);envelope.connect(sourceBuses.actions);
+    envelope.gain.setValueAtTime(0,time);envelope.gain.linearRampToValueAtTime(.12 + strength * .12,time + .008);envelope.gain.exponentialRampToValueAtTime(.0001,time + .47);
+    let finished = 0;
+    for (const source of [noise,squeal,knock]) {
+      transients.add(source);source.onended = () => {transients.delete(source);source.disconnect();if (++finished === 3) {band.disconnect();envelope.disconnect();squealGain.disconnect();knockGain.disconnect();}};
+      source.start(time);source.stop(time + .5);
+    }
+    return true;
+  }
+  async function transition(kind) {
+    if (!['focus','reveal'].includes(kind) || !mix.effects || paused || (!isEnabled() && !await attemptStart(false))) return false;
+    const time = audioTime();if (activeTransitions >= 2 || time - lastTransitionTime < .12) return false;lastTransitionTime = time;activeTransitions++;
+    const reveal = kind === 'reveal', duration = reveal ? 1.65 : 1.45;
+    const noise = context.createBufferSource(), bass = context.createOscillator(), chime = context.createOscillator();noise.buffer = noiseBuffer(duration, false);
+    const filter = context.createBiquadFilter(), envelope = gain(0), windGain = gain(.3), bassGain = gain(.4), chimeGain = gain(.22), pan = context.createStereoPanner();
+    filter.type = 'bandpass';filter.Q.value = .65;
+    filter.frequency.setValueAtTime(reveal ? 380 : 1800,time);filter.frequency.exponentialRampToValueAtTime(reveal ? 2600 : 420,time + duration * .76);
+    bass.type = 'sine';bass.frequency.setValueAtTime(reveal ? 146.8324 : 220,time);bass.frequency.exponentialRampToValueAtTime(reveal ? 293.6648 : 73.4162,time + duration * .84);
+    chime.type = 'sine';chime.frequency.setValueAtTime(reveal ? 440 : 880,time);chime.frequency.exponentialRampToValueAtTime(reveal ? 659.2551 : 293.6648,time + duration * .84);
+    pan.pan.setValueAtTime(reveal ? -.28 : .28,time);pan.pan.linearRampToValueAtTime(reveal ? .28 : -.28,time + duration);
+    noise.connect(filter).connect(windGain).connect(envelope);bass.connect(bassGain).connect(envelope);chime.connect(chimeGain).connect(envelope);envelope.connect(pan).connect(sourceBuses.actions);
+    envelope.gain.setValueAtTime(0,time);envelope.gain.linearRampToValueAtTime(reveal ? .19 : .16,time + duration * .3);envelope.gain.exponentialRampToValueAtTime(.0001,time + duration);
+    let finished = 0;
+    for (const source of [noise,bass,chime]) {
+      transients.add(source);source.onended = () => {transients.delete(source);source.disconnect();if (++finished === 3) {activeTransitions--;filter.disconnect();envelope.disconnect();windGain.disconnect();bassGain.disconnect();chimeGain.disconnect();pan.disconnect();}};
+      source.start(time);source.stop(time + duration + .04);
+    }
+    return true;
+  }
+  async function raceCue(type) {
+    const phrases = {
+      countdown:[[440,0,.22]], go:[[659.2551,0,.12],[880,.11,.35]],
+      lap:[[587.3295,0,.13],[739.9888,.12,.13],[880,.24,.28]],
+      finish:[[587.3295,0,.16],[739.9888,.14,.16],[880,.28,.18],[1174.659,.48,.65]],
+      bump:[[110,0,.13]],
+    };
+    if (!phrases[type] || !mix.effects || paused || (!isEnabled() && !await attemptStart(false))) return false;
+    const time=audioTime();raceCueSlots=raceCueSlots.filter(slot=>slot.until>time);activeRaceCues=raceCueSlots.length;
+    if (time-(lastRaceCueTime[type]??-Infinity)<.12 || activeRaceCues>=4) return false;lastRaceCueTime[type]=time;
+    const slot={until:time+Math.max(...phrases[type].map(([,offset,duration])=>offset+duration+.025))};raceCueSlots.push(slot);activeRaceCues=raceCueSlots.length;
+    let remaining=phrases[type].length;
+    for (const [frequency,offset,duration] of phrases[type]) {
+      const note=context.createOscillator(),envelope=gain(0),start=time+offset;
+      note.type=type==='bump'?'triangle':'sine';note.frequency.value=frequency;
+      envelope.gain.setValueAtTime(0,start);envelope.gain.linearRampToValueAtTime(type==='go'?.15:.11,start+.009);envelope.gain.exponentialRampToValueAtTime(.0001,start+duration);
+      note.connect(envelope).connect(sourceBuses.actions);transients.add(note);
+      note.onended=()=>{transients.delete(note);note.disconnect();envelope.disconnect();if(--remaining===0){raceCueSlots=raceCueSlots.filter(value=>value!==slot);activeRaceCues=raceCueSlots.length;}};
+      note.start(start);note.stop(start+duration+.025);
     }
     return true;
   }
@@ -374,14 +440,14 @@ export function createAmbience({offlineContext, clock, manualScheduling = false}
     toggle: () => isEnabled() ? Promise.resolve(mute()) : attemptStart(true),
     isEnabled: () => Boolean(isEnabled()), state,
     setMix, getMix: () => ({...mix}),
-    diagnostics: () => ({mix: {...mix}, targets: {...targets}, droneActive: targets.drone > 0, activeImpacts, isolated: {...isolated}}),
+    diagnostics: () => ({mix: {...mix}, targets: {...targets}, droneActive: targets.drone > 0, activeImpacts, activeTransitions, activeRaceCues, isolated: {...isolated}}),
     // Deterministic offline QA uses the identical graph with an explicit audio clock.
     diagnosticTick() {if (offlineContext) {updateMotion();scheduleScore();scheduleBirds();}},
     isolateSources(names) {if (!offlineContext) return;for (const name of Object.keys(isolated)) {isolated[name] = Number(names.includes(name));sourceBuses[name].gain.cancelScheduledValues(audioTime());sourceBuses[name].gain.setValueAtTime(isolated[name], audioTime());}},
     subscribe(listener) {listeners.add(listener);listener(state());return () => listeners.delete(listener);},
     // A clone gives each recorder ownership of its tracks without ending later recordings.
     getStream(clone = true) {return clone ? (recordDestination?.stream?.clone?.() || null) : (recordDestination?.stream || null);},
-    setMotion, horn, impact,
+    setMotion, horn, impact, brake, transition, raceCue,
     setPaused(value) {paused = Boolean(value);updateMotion();},
     destroy() {
       destroyed = true;requested = false;clearInterval(musicTimer);clearTimeout(suspendTimer);

@@ -139,14 +139,14 @@ test('horn adds a short dual tone to the same speaker/recording mix and respects
  audio.mute();ctx.currentTime=.6;assert.equal(await audio.horn(),false,'Horn does not override a deliberate page mute');
 });
 
-test('fireball impacts remain distinct, rate limited, mastered into recordings, and honor mute and pause',async()=>{
+test('powder-boom impacts remain finite, rate limited, mastered into recordings, and honor mute and pause',async()=>{
  const audio=make();await audio.start();const ctx=contexts[0],before=ctx.oscillators,bufferCount=ctx.bufferNodes.length;
  assert.equal(await audio.impact(100),true);const note=ctx.oscillatorNodes[before],noise=ctx.bufferNodes[bufferCount];
  const reaches=(node,target,seen=new Set())=>{if(node===target)return true;if(seen.has(node))return false;seen.add(node);return(node.connections||[]).some(next=>reaches(next,target,seen));};
  assert.ok(reaches(note,ctx.destination)&&reaches(noise,ctx.recordNode),'Low thump and generated whoosh share the limited speaker and capture output');
- assert.ok(note.stopTime-note.startedAt<=.7&&noise.stopTime-noise.startedAt<=.7);assert.ok(noise.stopTime-noise.startedAt>.4);
+ assert.ok(note.stopTime-note.startedAt<=1.1&&noise.stopTime-noise.startedAt<=1.1);assert.ok(noise.stopTime-noise.startedAt>.4);
  const envelope=noise.connections[0].connections[0],peak=envelope.gain.events.find(event=>event.kind==='linear').value;
- assert.ok(peak>=.15&&peak<=.16,'Explosion has a clear transient while leaving room for music and transport');
+ assert.ok(peak>=.37&&peak<=.38,'Cannon impact has a stronger transient that still feeds the shared compressor');
  assert.equal(await audio.impact(1),false,'Rapid contacts cannot stack impacts instantly');ctx.currentTime=.25;assert.equal(await audio.impact(.3),true);
  assert.equal(ctx.bufferNodes.at(-1).buffer,noise.buffer,'Generated noise is cached rather than allocated per hit');
  audio.setPaused(true);ctx.currentTime=.3;assert.equal(await audio.impact(1),false);audio.setPaused(false);audio.mute();assert.equal(await audio.impact(1),false);
@@ -299,4 +299,48 @@ test('occasional original bird calls stay bounded, irregular, and quiet during p
  audio.setMotion(0,'car',{birdActivity:0});ctx.currentTime=30;t.mock.timers.tick(75);assert.equal(birds().length,2);
  audio.setMotion(0,'car',{birdActivity:1});ctx.currentTime=50;t.mock.timers.tick(75);assert.equal(birds().length,4);
  audio.mute();ctx.currentTime=70;t.mock.timers.tick(75);assert.equal(birds().length,4);audio.destroy();t.mock.timers.reset();
+});
+
+
+test('focus and reveal use distinct finite stereo sweeps and respect the action mix',async()=>{
+ const audio=make();await audio.start();const ctx=contexts[0],start=ctx.oscillators;
+ assert.equal(await audio.transition('focus'),true);
+ const focus=ctx.oscillatorNodes.slice(start);assert.equal(focus.length,2);
+ assert.ok(focus.every(note=>note.stopTime-note.startedAt<1.6));
+ assert.ok(focus.every(note=>note.frequency.events.at(-1).value<note.frequency.events[0].value),'Camera approach falls into the close-up');
+ assert.equal(await audio.transition('focus'),false,'Duplicate click handlers cannot stack a transition');
+ ctx.currentTime=.2;assert.equal(await audio.transition('reveal'),true);
+ const reveal=ctx.oscillatorNodes.slice(start+2);assert.equal(reveal.length,2);
+ assert.ok(reveal.every(note=>note.frequency.events.at(-1).value>note.frequency.events[0].value),'World reveal opens into an ascending major interval');
+ assert.ok(reveal.every(note=>note.stopTime-note.startedAt<1.8));
+ ctx.currentTime=.4;assert.equal(await audio.transition('reveal'),false,'Only two bounded sweeps may overlap');
+ audio.setMix({effects:false});ctx.currentTime=2;assert.equal(await audio.transition('focus'),false);audio.setMix({effects:true});audio.mute();assert.equal(await audio.transition('reveal'),false);
+ assert.equal(await audio.transition('unknown'),false);
+});
+
+test('exaggerated braking is edge-triggered, short, and cannot become a constant hiss',async()=>{
+ const audio=make();await audio.start();const ctx=contexts[0],start=ctx.oscillators;
+ ctx.currentTime=.1;audio.setMotion(16,'car',{braking:false,acceleration:0});
+ ctx.currentTime=.2;audio.setMotion(11,'car',{braking:true,acceleration:-24});await Promise.resolve();await Promise.resolve();
+ const voices=ctx.oscillatorNodes.slice(start);assert.equal(voices.length,2);assert.ok(voices.every(note=>note.stopTime-note.startedAt<=.51));
+ for(let i=0;i<60;i++){ctx.currentTime=.3+i*.1;audio.setMotion(0,'car',{braking:true,acceleration:0});}
+ await Promise.resolve();assert.equal(ctx.oscillators,start+2,'Holding the brake never schedules repeated tire squeals');assert.equal(audio.diagnostics().targets.braking,0,'A stationary held brake has no regenerative hiss');
+ ctx.currentTime=7;audio.setMotion(0,'car',{braking:false});ctx.currentTime=7.1;audio.setMotion(0,'car',{braking:true});await Promise.resolve();assert.equal(ctx.oscillators,start+2,'Stationary brakes stay silent');
+ audio.setPaused(true);assert.equal(await audio.brake(1),false);audio.setPaused(false);audio.setMix({effects:false});assert.equal(await audio.brake(1),false);
+});
+
+
+test('race countdown, lap, and finish phrases are finite action cues with a bounded voice budget',async()=>{
+ const audio=make();await audio.start();const ctx=contexts[0],start=ctx.oscillators;
+ assert.equal(await audio.raceCue('countdown'),true);assert.equal(ctx.oscillators,start+1);assert.equal(await audio.raceCue('countdown'),false);
+ ctx.currentTime=.3;assert.equal(await audio.raceCue('go'),true);ctx.currentTime=.6;assert.equal(await audio.raceCue('lap'),true);ctx.currentTime=.9;assert.equal(await audio.raceCue('finish'),true);
+ assert.ok(ctx.oscillatorNodes.slice(start).every(note=>note.stopTime-note.startedAt<.7));ctx.currentTime=1.2;assert.equal(await audio.raceCue('finish'),true,'Expired earlier phrases release their budget on the audio clock even before offline rendering');
+ ctx.currentTime=1.33;assert.equal(await audio.raceCue('finish'),true);ctx.currentTime=1.46;assert.equal(await audio.raceCue('finish'),true);ctx.currentTime=1.59;assert.equal(await audio.raceCue('finish'),false,'Four overlapping long fanfares exhaust the budget');
+ audio.mute();assert.equal(await audio.raceCue('go'),false);assert.equal(await audio.raceCue('invalid'),false);
+});
+
+
+test('a wall bump immediately before the finish cannot suppress the finish phrase',async()=>{
+ const audio=make();await audio.start();const ctx=contexts[0];
+ ctx.currentTime=1;assert.equal(await audio.raceCue('bump'),true);ctx.currentTime=1.01;assert.equal(await audio.raceCue('finish'),true);
 });
