@@ -36,7 +36,7 @@ document.querySelector('#app').innerHTML=`
 const dialog=document.querySelector('#detail'),ambience=createAmbience();let world,raceUI,classic=false,near=null,activeZone=0,lastFocus,toastTimer,viewRecorder,recordingBusy=false;
 const resumeReader=bindResumeReader({dialog,scroller:document.querySelector('#detail-scroll'),slider:document.querySelector('#detail-progress'),progress:document.querySelector('#detail-progress-value'),more:document.querySelector('#detail-more'),section:document.querySelector('#detail-section'),body:document.querySelector('#detail-body'),onSection:showDetail,reducedMotion});
 const pageTurn=bindPageTurn({dialog,scroller:document.querySelector('#detail-scroll'),reducedMotion});
-const voiceGuide=bindVoiceGuide({root:document.querySelector('#explore'),reducedMotion,onSpeaking:value=>ambience.setNarrating(value)});
+const voiceGuide=bindVoiceGuide({root:document.querySelector('#explore'),reducedMotion,getAudioContext:()=>ambience.getContext(),onSpeaking:value=>ambience.setNarrating(value)});
 const guideSuspensions=new Set();let guideSuspended=false;
 function suspendGuide(reason,active){if(active)guideSuspensions.add(reason);else guideSuspensions.delete(reason);const next=guideSuspensions.size>0;if(next!==guideSuspended){guideSuspended=next;voiceGuide.event('suspend',{active:next});}}
 const visited=new Set();function toast(message,duration=6000){const el=document.querySelector('#toast');el.textContent=message;el.hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.hidden=true,duration);}

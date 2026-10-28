@@ -6,7 +6,7 @@ Vite is a development/build dependency distributed under the MIT License: https:
 
 Manrope and Instrument Serif are loaded optionally from Google Fonts, under their respective SIL Open Font Licenses: https://fonts.google.com/specimen/Manrope and https://fonts.google.com/specimen/Instrument+Serif. They are not bundled here.
 
-All architectural, vehicle, foliage, and train meshes and synthesized audio are original procedural work. Brand and landmark names identify regional design references; they do not imply sponsorship, affiliation, employment, membership, or university attendance.
+All architectural, vehicle, foliage, and train meshes, music, and sound effects are original procedural work. Brand and landmark names identify regional design references; they do not imply sponsorship, affiliation, employment, membership, or university attendance.
 
 ## Rendering components and environment
 
@@ -41,3 +41,13 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
+
+## Narration
+
+The original portfolio narration script is included in `src/voice-guide.js`.
+The bundled `public/narration/*.mp3` recordings use the af_heart voice from
+[Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M), whose weights are
+released under the [Apache License 2.0](https://huggingface.co/hexgrad/Kokoro-82M/blob/main/LICENSE).
+Production used [Kokoro.js](https://github.com/hexgrad/kokoro/tree/main/kokoro.js)
+and the [ONNX distribution](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX).
+Only finished audio is bundled; the production tools and model weights are not shipped to visitors.

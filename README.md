@@ -10,7 +10,7 @@ An interactive portfolio set in a miniature San Francisco Bay Area. Explore prof
 - **Drive:** use WASD, arrow keys, or the right-hand mouse/touch joystick. Space brakes, H sounds the horn, C follows the car, Shift boosts and R resets.
 - **Travel:** choose any of the five destinations for a guided trip. The Golden Gate Bridge connects to the driving route, including automatic return to resume stops.
 - **Caltrain:** follow the electrified Peninsula corridor. The Future Portal preview illustrates a proposed connection to the Salesforce Transit Center.
-- **Guide:** an optional spoken welcome, captions and subtle highlights introduce the journey and the five resume stops. Voice and Skip guide controls remain available while reading. Spoken guidance uses the visitor’s available English system voices and lowers the soundtrack while speaking.
+- **Guide:** an optional spoken welcome, captions and subtle highlights introduce the journey and the five resume stops. Voice and Skip guide controls remain available while reading. Spoken guidance uses bundled, consistently mastered recordings and lowers the soundtrack while speaking. Device-generated voice fallback is disabled.
 - **Sound:** adjust volume, music, world ambience and vehicle effects independently in Audio mix. Preferences persist across visits.
 - **Classic view:** read all portfolio content without driving.
 

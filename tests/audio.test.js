@@ -377,3 +377,13 @@ test('spoken guidance ducks the existing mix and restores the selected volume wi
  audio.setNarrating(false);assert.equal(master.gain.value,.2);
  audio.mute();audio.setNarrating(true);audio.setNarrating(false);assert.equal(master.gain.value,0);
 });
+
+
+test('recorded narration can share the existing context without requesting music or losing ownership',async()=>{
+ const audio=make(),context=audio.getContext();
+ assert.equal(audio.getContext(),context);assert.equal(contexts.length,1);
+ assert.equal(audio.state().requested,false);assert.equal(audio.isEnabled(),false);
+ await audio.start();assert.equal(audio.getContext(),context);
+ audio.mute();assert.equal(audio.getContext(),context);assert.equal(audio.state().muted,true);
+ audio.destroy();assert.equal(audio.getContext(),null);
+});

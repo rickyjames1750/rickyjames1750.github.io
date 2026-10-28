@@ -458,6 +458,7 @@ export function createAmbience({offlineContext, clock, manualScheduling = false}
     toggle: () => isEnabled() ? Promise.resolve(mute()) : attemptStart(true),
     isEnabled: () => Boolean(isEnabled()), state,
     setMix, getMix: () => ({...mix}),
+    getContext() {if(destroyed)return null;initialize();return context||null;},
     diagnostics: () => ({mix: {...mix}, targets: {...targets}, droneActive: targets.drone > 0, narrating, activeImpacts, activeTransitions, activeRaceCues, isolated: {...isolated}}),
     // Deterministic offline QA uses the identical graph with an explicit audio clock.
     diagnosticTick() {if (offlineContext) {updateMotion();scheduleScore();scheduleBirds();}},
