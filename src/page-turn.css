@@ -1,0 +1,165 @@
+/* The moving leaf is contained below the fixed reader controls. */
+.page-turn-stage {
+  position: absolute;
+  z-index: 2;
+  overflow: hidden;
+  isolation: isolate;
+  pointer-events: none;
+  perspective: 1300px;
+  perspective-origin: 0 48%;
+  background: var(--paper, #f3f0e7);
+  contain: layout paint;
+}
+
+.page-turn-under,
+.page-turn-sheet,
+.page-turn-front,
+.page-turn-back,
+.page-turn-shadow {
+  position: absolute;
+  inset: 0;
+}
+
+.page-turn-under {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 36px 42px;
+  background:
+    linear-gradient(90deg, #153d2e10, transparent 14%),
+    linear-gradient(135deg, #f8f6ef, var(--paper, #f3f0e7));
+  box-shadow: inset 0 1px #fff9;
+}
+
+.page-turn-kicker {
+  color: #678171;
+  font: 600 9px/1.7 'Manrope', sans-serif;
+  letter-spacing: 2px;
+  margin-bottom: 21px;
+}
+
+.page-turn-next-title {
+  max-width: 350px;
+  color: var(--ink, #163933);
+  font: 47px/1.1 'Instrument Serif', Georgia, serif;
+  letter-spacing: -1px;
+  text-wrap: balance;
+}
+
+.page-turn-next-city {
+  margin-top: 15px;
+  color: #617967;
+  font: 500 12px/1.5 'Manrope', sans-serif;
+}
+
+.page-turn-route-mark {
+  margin-top: 26px;
+  width: 42px;
+  padding-top: 9px;
+  border-top: 1px solid #9fb39c;
+  color: #416d52;
+  font: 27px/1 Georgia, serif;
+}
+
+.page-turn-sheet {
+  transform-origin: 0 50%;
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+
+.page-turn-front,
+.page-turn-back {
+  overflow: hidden;
+  background: var(--paper, #f3f0e7);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  box-shadow: 6px 0 19px #163b2c16;
+}
+
+.page-turn-front::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+  background: linear-gradient(90deg, #233d2a15, transparent 9%, transparent 76%, #fff5);
+  pointer-events: none;
+}
+
+.page-turn-back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: rotateY(180deg);
+  background: linear-gradient(90deg, #e3e4d8, #f8f6ef 17%, #efeee2);
+  box-shadow: inset 7px 0 23px #2844331b, -8px 0 25px #0b2f2829;
+}
+
+.page-turn-back-mark {
+  opacity: .17;
+  color: #476251;
+  font: 600 9px/1.5 'Manrope', sans-serif;
+  letter-spacing: 3px;
+  writing-mode: vertical-rl;
+}
+
+.page-turn-curl {
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 12px;
+  opacity: 0;
+  background: linear-gradient(90deg, transparent, #fff9 45%, #9aab9952 98%);
+  border-right: 1px solid #fff9;
+  filter: blur(.25px);
+}
+
+.page-turn-shadow {
+  background: linear-gradient(90deg, #143c2fdd, #173f2e75 24%, transparent 78%);
+  opacity: 0;
+  transform-origin: 0 50%;
+}
+
+.page-turn-copy {
+  color: var(--ink, #163933);
+  background: var(--paper, #f3f0e7);
+  pointer-events: none;
+}
+
+.page-turn-copy [data-page-turn-source='detail-number'] {
+  color: #a4b39a;
+  font: 54px 'Instrument Serif', Georgia, serif;
+}
+
+.is-page-turning #next { cursor: progress; }
+.is-page-turning #next:disabled { opacity: .7; }
+.page-turn-fallback .page-turn-sheet {
+  animation: reader-paper-turn var(--page-turn-duration) cubic-bezier(.32,.02,.26,1) both;
+}
+.page-turn-fallback .page-turn-shadow {
+  animation: reader-paper-shadow var(--page-turn-duration) ease-in-out both;
+}
+.page-turn-stage[data-reduced-motion='true'] { perspective: none; }
+.page-turn-stage[data-reduced-motion='true'] .page-turn-shadow,
+.page-turn-stage[data-reduced-motion='true'] .page-turn-curl { display: none; }
+.page-turn-fallback[data-reduced-motion='true'] .page-turn-sheet {
+  animation: reader-paper-fade var(--page-turn-duration) ease-out both;
+}
+
+@keyframes reader-paper-turn {
+  0% { transform: rotateY(0deg) translateZ(0); }
+  20% { transform: rotateY(-17deg) translateZ(8px); }
+  60% { transform: rotateY(-84deg) translateZ(13px); }
+  100% { transform: rotateY(-174deg) translateZ(0); }
+}
+@keyframes reader-paper-shadow {
+  0%,100% { opacity: 0; }
+  48% { opacity: .24; }
+}
+@keyframes reader-paper-fade {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@media (max-width: 760px) {
+  .page-turn-under { padding: 28px 24px; }
+  .page-turn-next-title { font-size: 40px; }
+  .page-turn-kicker { font-size: 8px; letter-spacing: 1.6px; }
+}

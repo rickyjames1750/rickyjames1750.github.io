@@ -29,7 +29,7 @@ import { createLandmarks, createGravityCar, createCaltrain } from './landmarks.j
 import { project, peninsulaCoast, eastBayCoast, marinCoast, railCoordinates, futurePortalCoordinates, landmarks } from './geography.js';
 
 const v3 = (p,y=.72) => new T.Vector3(p.x,y,p.z);
-export function createWorld({container,labels,zones,reducedMotion,onNear,onArrive,onDrive,onStatus=()=>{},onBurst=()=>{},onRobotHit=()=>{},onRaceEvent=()=>{},getAudioStream=()=>null}) {
+export function createWorld({container,labels,zones,reducedMotion,onNear,onArrive,onDrive,onTravel=()=>{},onStatus=()=>{},onBurst=()=>{},onRobotHit=()=>{},onRaceEvent=()=>{},getAudioStream=()=>null}) {
  const lifecycle=new AbortController();
  const listen=(target,type,handler,options={})=>target.addEventListener(type,handler,{...options,signal:lifecycle.signal});
  const renderer = new T.WebGLRenderer({antialias:true,powerPreference:'high-performance',preserveDrawingBuffer:true});
@@ -183,7 +183,7 @@ export function createWorld({container,labels,zones,reducedMotion,onNear,onArriv
  const livingWorld=createLivingWorld({scene,roadCurve,railCurve,corridors,bridgeDrive,zones,reducedMotion,isOnLand:onLand,sampleHeight:drivingHeight,onRobotHit(event){chassis.impact(.3);onRobotHit(event);}});
  const burstLight=new T.PointLight('#ff9b32',0,9,2);scene.add(burstLight);
  let impactKick=0;
- const playground=createPlayground({scene,roadCurve,bridgeDrive,sampleHeight:drivingHeight,reducedMotion,onBurst(event){burstLight.position.copy(event.position).add(new T.Vector3(0,.7,0));burstLight.intensity=reducedMotion?0:16;impactKick=Math.min(.38,impactKick+.16+event.intensity*.2);chassis.impact(event.intensity);vehicleHop.trigger(event.intensity);onStatus({popped:event.total});onBurst(event);}});
+ const playground=createPlayground({scene,roadCurve,bridgeDrive,reservedAreas:[...arrivals.values()].map(point=>({...point,radius:4.5})),sampleHeight:drivingHeight,reducedMotion,onBurst(event){burstLight.position.copy(event.position).add(new T.Vector3(0,.7,0));burstLight.intensity=reducedMotion?0:16;impactKick=Math.min(.38,impactKick+.16+event.intensity*.2);chassis.impact(event.intensity);vehicleHop.trigger(event.intensity);onStatus({popped:event.total});onBurst(event);}});
  let paused=false,velocity=0,mode='explore',cameraMode='hero',day=true,auto=null,nearest=null,lastTime=0,frame=0,trainT=.1,trainDir=1,portal=false,cinematic=false,cinemaTime=0,recorder=null,recording=false,quality='high',trainVelocity=0,recordingURL=null,perfStart=0,perfFrames=0;
  const pauseReasons=new Set();
  let analog={throttle:0,steer:0,brake:0,active:false},brakeHeld=false,acceleration=0,previousVelocity=0;
@@ -215,7 +215,7 @@ export function createWorld({container,labels,zones,reducedMotion,onNear,onArriv
    if(!route.points.length){onStatus({mode,camera:cameraMode,message:'Drive into an open area to reconnect with the road, then choose your stop again.'});return;}
    auto={id,points:route.points,index:0};
   }
-  cameraCache.ready=false;onStatus({mode,camera:cameraMode,message:`Heading to ${z.label} · ${z.city}. ${mode==='drive'&&bridgeDrive.contains(car.position.x,car.position.z)?'Following the bridge back to San Francisco.':''}`});
+  onTravel(id,mode);cameraCache.ready=false;onStatus({mode,camera:cameraMode,message:`Heading to ${z.label} · ${z.city}. ${mode==='drive'&&bridgeDrive.contains(car.position.x,car.position.z)?'Following the bridge back to San Francisco.':''}`});
  }
  function startRace(){
   cancelEntrance();cancelPortal();clearDrivingInput();auto=null;pauseReasons.clear();paused=false;cinematic=false;fadePass.uniforms.fade.value=1;
@@ -227,7 +227,7 @@ export function createWorld({container,labels,zones,reducedMotion,onNear,onArriv
     if(event.type==='bump'){chassis.impact(event.intensity);impactKick=Math.max(impactKick,.1);}
     onRaceEvent(event);
    }});
-   racePlayground=createPlayground({scene,roadCurve:raceCurve,sampleHeight:()=>9,reducedMotion,onBurst(event){burstLight.position.copy(event.position).add(new T.Vector3(0,.7,0));burstLight.intensity=reducedMotion?0:22;impactKick=Math.min(.38,impactKick+.25);chassis.impact(event.intensity);vehicleHop.trigger(event.intensity);onBurst(event);}});
+   racePlayground=createPlayground({scene,roadCurve:raceCurve,profile:'race',sampleHeight:()=>9,reducedMotion,onBurst(event){burstLight.position.copy(event.position).add(new T.Vector3(0,.7,0));burstLight.intensity=reducedMotion?0:22;impactKick=Math.min(.38,impactKick+.25);chassis.impact(event.intensity);vehicleHop.trigger(event.intensity);onBurst(event);}});
   }
   raceActive=true;raceBoost=false;impactKick=0;burstLight.intensity=0;raceScene.setVisible(true);racePlayground.root.visible=true;playground.root.visible=false;racePlayground.reset();mode='drive';cameraMode='follow';cameraManual=false;cameraCache.ready=false;velocity=0;nearest=null;onNear(null);
   const state=race.start();placeRaceCar(state);const target=car.position.clone().add(new T.Vector3(0,.6,0)),offset=new T.Vector3(0,4.8,-8.5).applyAxisAngle(new T.Vector3(0,1,0),car.rotation.y);camera.position.copy(target).add(offset);controls.target.copy(target);camera.lookAt(target);onDrive();onStatus({race:state,mode});

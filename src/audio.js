@@ -11,6 +11,7 @@ export function createAmbience({offlineContext, clock, manualScheduling = false}
   const sourceBuses = {}, mix = {volume: .7, music: true, ambience: true, effects: true};
   const isolated = {music: 1, motor: 1, train: 1, drone: 1, birds: 1, actions: 1};
   const targets = {motor: 0, road: 0, braking: 0, train: 0, drone: 0};
+  let narrating = false;
   let requested = false, paused = false, destroyed = false, unavailable = false;
   let musicTimer, suspendTimer, chordIndex = 0, attempts = 0, nextStepTime = null, musicStep = 0, nextBirdTime = 1.5;
   let motion = 0, travelMode = 'car', lastState = '', motionTime = null, acceleration = 0, braking = 0, lastHornTime = -Infinity, lastImpactTime = -Infinity, lastBrakeTime = -Infinity, lastTransitionTime = -Infinity, lastPageTime = -Infinity, lastRaceCueTime = {}, activeRaceCues = 0, raceCueSlots = [], impactBuffer, skidBuffer, paperBuffer, activeImpacts = 0, activeTransitions = 0, brakeHeld = false;
@@ -88,7 +89,7 @@ export function createAmbience({offlineContext, clock, manualScheduling = false}
   }
   function reconcile() {
     if (context && master && context.state !== 'closed') {
-      master.gain.setTargetAtTime(isEnabled() ? 0.5 * mix.volume : 0, audioTime(), isEnabled() ? 0.25 : 0.06);
+      master.gain.setTargetAtTime(isEnabled() ? 0.5 * mix.volume * (narrating ? .22 : 1) : 0, audioTime(), isEnabled() ? 0.25 : 0.06);
     }
     notify();
   }
@@ -457,7 +458,7 @@ export function createAmbience({offlineContext, clock, manualScheduling = false}
     toggle: () => isEnabled() ? Promise.resolve(mute()) : attemptStart(true),
     isEnabled: () => Boolean(isEnabled()), state,
     setMix, getMix: () => ({...mix}),
-    diagnostics: () => ({mix: {...mix}, targets: {...targets}, droneActive: targets.drone > 0, activeImpacts, activeTransitions, activeRaceCues, isolated: {...isolated}}),
+    diagnostics: () => ({mix: {...mix}, targets: {...targets}, droneActive: targets.drone > 0, narrating, activeImpacts, activeTransitions, activeRaceCues, isolated: {...isolated}}),
     // Deterministic offline QA uses the identical graph with an explicit audio clock.
     diagnosticTick() {if (offlineContext) {updateMotion();scheduleScore();scheduleBirds();}},
     isolateSources(names) {if (!offlineContext) return;for (const name of Object.keys(isolated)) {isolated[name] = Number(names.includes(name));sourceBuses[name].gain.cancelScheduledValues(audioTime());sourceBuses[name].gain.setValueAtTime(isolated[name], audioTime());}},
@@ -466,6 +467,7 @@ export function createAmbience({offlineContext, clock, manualScheduling = false}
     getStream(clone = true) {return clone ? (recordDestination?.stream?.clone?.() || null) : (recordDestination?.stream || null);},
     setMotion, horn, impact, brake, transition, pageTurn, raceCue,
     setPaused(value) {paused = Boolean(value);updateMotion();},
+    setNarrating(value) {const next=Boolean(value);if(next!==narrating){narrating=next;reconcile();}},
     destroy() {
       destroyed = true;requested = false;clearInterval(musicTimer);clearTimeout(suspendTimer);
       for (const finish of [...resumeTimers.values()]) finish();resumeTimers.clear();

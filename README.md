@@ -6,10 +6,11 @@ An interactive portfolio set in a miniature San Francisco Bay Area. Explore prof
 
 ## Experience
 
-- **Read:** open any resume section. A permanent scroll rail, reading progress and highlighted “More below” control keep longer sections easy to navigate. Use the section selector for direct reading. Next section turns the page with a paper sound and drives the car to the next stop.
+- **Read:** open any resume section. A permanent scroll rail, reading progress and highlighted “More below” control keep longer sections easy to navigate. Use the section selector for direct reading. Next section turns the paper with a brief sound and follows the selected car or train to the next stop.
 - **Drive:** use WASD, arrow keys, or the right-hand mouse/touch joystick. Space brakes, H sounds the horn, C follows the car, Shift boosts and R resets.
 - **Travel:** choose any of the five destinations for a guided trip. The Golden Gate Bridge connects to the driving route, including automatic return to resume stops.
 - **Caltrain:** follow the electrified Peninsula corridor. The Future Portal preview illustrates a proposed connection to the Salesforce Transit Center.
+- **Guide:** an optional spoken welcome, captions and subtle highlights introduce the journey and the five resume stops. Voice and Skip guide controls remain available while reading. Spoken guidance uses the visitor’s available English system voices and lowers the soundtrack while speaking.
 - **Sound:** adjust volume, music, world ambience and vehicle effects independently in Audio mix. Preferences persist across visits.
 - **Classic view:** read all portfolio content without driving.
 
@@ -39,7 +40,8 @@ Built with Three.js, Vite and Web Audio. Procedural geometry and instancing prov
 - `src/vehicle-*.js`, `src/joystick.js` — grounding, suspension and controls.
 - `src/urban-nature.js`, `src/city-detail.js` — vegetation and architecture.
 - `src/audio.js` — score, soundscape, volume groups and recording mix.
-- `src/resume-reader.js` — permanent reading controls and section navigation.
+- `src/resume-reader.js`, `src/page-turn.js` — permanent reading controls, paper animation and section navigation.
+- `src/voice-guide.js` — optional narration, captions and guided itinerary.
 - `src/content.js` — professional background and project descriptions.
 - `tests/` — automated checks for navigation, geometry, input, audio and UI lifecycle.
 

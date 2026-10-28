@@ -4,7 +4,11 @@ import {
 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
-const SPACING = 8.5, RESPAWN_SECONDS = 16, HIT_RADIUS = 1.05;
+const HIT_RADIUS = 1.05;
+const PROFILES = Object.freeze({
+  journey: Object.freeze({spacing: 22, roadMaximum: 10, bridgeMaximum: 3, offset: 1.45, endClearance: 12, respawnSeconds: 55}),
+  race: Object.freeze({spacing: 48, roadMaximum: 8, bridgeMaximum: 0, offset: 2.75, endClearance: 18, respawnSeconds: 90}),
+});
 const CAPACITY = Object.freeze({shards: 256, sparks: 192, rings: 20, fireballs: 64, smoke: 96});
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const finitePosition = point => point && [point.x, point.y, point.z].every(Number.isFinite);
@@ -18,22 +22,30 @@ export function sweptPodContact(from, to, pod, radius = HIT_RADIUS, heightTolera
     && Math.abs(from.y + (to.y - from.y) * t - pod.y) <= heightTolerance;
 }
 
-/** Arc-length placement follows the actual drivable curves, including their elevated ramps. */
-export function energyPodPlacements({roadCurve, bridgeDrive, sampleHeight} = {}) {
+/** Sparse side-lane cargo leaves the guided line, arrivals and starting stretch clear. */
+export function energyPodPlacements({roadCurve, bridgeDrive, sampleHeight, profile = 'journey', reservedAreas = []} = {}) {
+  const settings = PROFILES[profile] || PROFILES.journey;
+  const reservations = Array.isArray(reservedAreas) ? reservedAreas.filter(area => Number.isFinite(area?.x) && Number.isFinite(area?.z)) : [];
   const placements = [];
-  for (const [route, curve, maximum] of [['road', roadCurve, 44], ['bridge', bridgeDrive?.curve, 16]]) {
+  for (const [route, curve, maximum] of [['road', roadCurve, settings.roadMaximum], ['bridge', bridgeDrive?.curve, settings.bridgeMaximum]]) {
+    if (!maximum) continue;
     if (!curve?.getPointAt || !Number.isFinite(curve.getLength())) continue;
     const length = curve.getLength();
-    if (length < 8) continue;
-    const count = Math.min(maximum, Math.max(1, Math.floor((length - 6) / SPACING)));
+    const usableLength = length - settings.endClearance * 2;
+    if (usableLength < 8) continue;
+    const count = Math.min(maximum, Math.floor(usableLength / settings.spacing) + 1);
     for (let i = 0; i < count; i++) {
-      const t = (4 + i * (length - 8) / Math.max(1, count - 1)) / length;
+      const distance = count === 1 ? length / 2 : settings.endClearance + i * usableLength / (count - 1);
+      const t = distance / length;
       const position = curve.getPointAt(t), tangent = curve.getTangentAt(t);
-      const horizontal = Math.hypot(tangent.x, tangent.z) || 1, offset = i % 2 ? -.28 : .28;
+      if (!finitePosition(position) || !finitePosition(tangent)) continue;
+      const horizontal = Math.hypot(tangent.x, tangent.z) || 1, offset = (i % 2 ? -1 : 1) * settings.offset;
       position.x -= tangent.z / horizontal * offset;position.z += tangent.x / horizontal * offset;
       const sampled = sampleHeight?.(position.x, position.z), height = typeof sampled === 'number' ? sampled : sampled?.height;
       if (Number.isFinite(height)) position.y = height;
-      if (!finitePosition(position) || placements.some(p => Math.hypot(p.position.x - position.x, p.position.z - position.z) < 3)) continue;
+      if (!finitePosition(position)
+        || reservations.some(area => Math.hypot(area.x - position.x, area.z - position.z) < (Number.isFinite(area.radius) ? Math.max(0, area.radius) : 4.5))
+        || placements.some(p => Math.hypot(p.position.x - position.x, p.position.z - position.z) < settings.spacing)) continue;
       placements.push({position, route, t, yaw: Math.atan2(tangent.x, tangent.z)});
     }
   }
@@ -126,13 +138,14 @@ function cloudMaterial(geometry, capacity, time, kind) {
 
 /**
  * Solid sci-fi cargo crates with a bounded arcade explosion. They do not stop the car.
- * Paused time never advances effects or the 16-active-second respawn.
+ * Paused time never advances effects or the slow, profile-specific respawn.
  * onBurst is aggregated once per update: count=this sweep, total=since reset.
  */
-export function createPlayground({scene, roadCurve, bridgeDrive, sampleHeight, reducedMotion = false, onBurst = () => {}} = {}) {
+export function createPlayground({scene, roadCurve, bridgeDrive, sampleHeight, profile = 'journey', reservedAreas = [], reducedMotion = false, onBurst = () => {}} = {}) {
   if (!scene?.add) throw new TypeError('createPlayground requires a Three.js scene.');
+  const settings = PROFILES[profile] || PROFILES.journey;
   const root = new Group();root.name = 'Metal cargo playground';scene.add(root);
-  const placements = energyPodPlacements({roadCurve, bridgeDrive, sampleHeight});
+  const placements = energyPodPlacements({roadCurve, bridgeDrive, sampleHeight, profile, reservedAreas});
   const pods = placements.map((placement, index) => ({...placement, cooldown: 0, phase: index * 1.73}));
   const dummy = new Object3D(), color = new Color(), zero = new Vector3(), time = {value: 0};
   const steel = new Color('#a3b4bd'), scorched = new Color('#6a5041'), gold = new Color('#ffd26c');
@@ -207,7 +220,7 @@ export function createPlayground({scene, roadCurve, bridgeDrive, sampleHeight, r
   }
 
   function burst(pod, intensity, quality) {
-    pod.cooldown = RESPAWN_SECONDS;effectsDirty = true;
+    pod.cooldown = settings.respawnSeconds;effectsDirty = true;
     if (!reducedMotion) {
       const eco = quality === 'eco';
       launch(shards, 'shard', pod.position, eco ? 10 : 18, intensity);

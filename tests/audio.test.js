@@ -367,3 +367,13 @@ test('boost pads and robot reactions have distinct short cues and share the boun
  assert.ok(robot.every(note=>note.connections[0].gain.events.find(event=>event.kind==='linear').value<=.055));
  audio.setPaused(true);assert.equal(await audio.raceCue('pad'),false);audio.setPaused(false);audio.setMix({effects:false});assert.equal(await audio.raceCue('robot'),false);
 });
+
+
+test('spoken guidance ducks the existing mix and restores the selected volume without unmuting',async()=>{
+ const audio=make();await audio.start();audio.setMix({volume:.6});const master=contexts[0].gainNodes[0];
+ assert.equal(master.gain.value,.3);audio.setNarrating(true);
+ assert.equal(master.gain.value,.3*.22);assert.equal(audio.getMix().volume,.6);
+ audio.setMix({volume:.4});assert.equal(master.gain.value,.2*.22);
+ audio.setNarrating(false);assert.equal(master.gain.value,.2);
+ audio.mute();audio.setNarrating(true);audio.setNarrating(false);assert.equal(master.gain.value,0);
+});

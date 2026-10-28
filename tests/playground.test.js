@@ -2,23 +2,53 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AdditiveBlending, Color, LineCurve3, Matrix4, Scene, ShaderLib, Vector3 } from 'three';
 import { createPlayground, energyPodPlacements, sweptPodContact } from '../src/playground.js';
+import { createRaceCurve } from '../src/bay-race.js';
 
 const point = (x, y = .8, z = 0) => new Vector3(x, y, z);
 const road = (length = 40) => new LineCurve3(point(0, .79), point(length, .79));
+const cargoLane = (x, y = .8) => point(x, y, 1.45);
+const passCargo = (game, options = {}) => {
+  game.update({dt: .016, carPosition: cargoLane(0), carSpeed: 16, ...options});
+  game.update({dt: .016, carPosition: cargoLane(40), carSpeed: 16, ...options});
+};
 
-test('pickup placements stay on real road and elevated bridge curves with finite sampled heights', () => {
+test('journey cargo stays sparse, alternates sides and leaves the guided line and approaches clear', () => {
   const roadCurve = road(400), bridgeDrive = {curve: new LineCurve3(point(0, .79), point(-100, 8.79))};
   const placements = energyPodPlacements({roadCurve, bridgeDrive, sampleHeight: x => ({height: x < 0 ? .79 - x * .08 : .79})});
   assert.ok(placements.some(p => p.route === 'bridge') && placements.some(p => p.route === 'road'));
-  assert.ok(placements.length <= 60, 'Longer routes cannot create unbounded render objects');
+  assert.equal(placements.filter(p => p.route === 'road').length, 10);
+  assert.equal(placements.filter(p => p.route === 'bridge').length, 3);
   for (const placement of placements) {
     assert.ok([placement.position.x, placement.position.y, placement.position.z, placement.t].every(Number.isFinite));
     const curve = placement.route === 'bridge' ? bridgeDrive.curve : roadCurve, center = curve.getPointAt(placement.t);
-    assert.ok(Math.hypot(center.x - placement.position.x, center.z - placement.position.z) < .3, 'Centerline pickups can be collected on guided trips');
+    assert.ok(Math.abs(Math.hypot(center.x - placement.position.x, center.z - placement.position.z) - 1.45) < 1e-6, 'Crates occupy side lanes');
+    assert.equal(sweptPodContact(curve.getPointAt(Math.max(0, placement.t - .01)), curve.getPointAt(Math.min(1, placement.t + .01)), placement.position), false, 'A normal guided centerline trip avoids cargo');
     assert.ok(Math.abs(center.y - placement.position.y) < 1e-6, 'Bridge pickups follow the elevated surface');
-    assert.ok(placement.t > 0 && placement.t < 1);
+    assert.ok(placement.t * curve.getLength() >= 12 - 1e-6 && (1 - placement.t) * curve.getLength() >= 12 - 1e-6, 'Both route ends have a clear approach');
+    for (const other of placements) if (placement !== other) assert.ok(Math.hypot(placement.position.x - other.position.x, placement.position.z - other.position.z) >= 22 - 1e-6, 'Nearby routes cannot cluster cargo either');
   }
-  assert.deepEqual(energyPodPlacements({roadCurve: road(2)}), [], 'No pickup is placed beyond a tiny route');
+  const sides = placements.filter(p => p.route === 'road').map(p => Math.sign(p.position.z));
+  assert.deepEqual(sides, [1, -1, 1, -1, 1, -1, 1, -1, 1, -1]);
+  assert.deepEqual(energyPodPlacements({roadCurve: road(20)}), [], 'Short roads remain entirely clear');
+});
+
+test('the full Bay Circuit has only a handful of optional side-lane crates and a clear grid', () => {
+  const curve = createRaceCurve({height: 9}), placements = energyPodPlacements({roadCurve: curve, profile: 'race'});
+  assert.ok(placements.length >= 6 && placements.length <= 8, `${placements.length} crates over the entire circuit`);
+  for (const pod of placements) {
+    const center = curve.getPointAt(pod.t);
+    assert.ok(Math.abs(center.distanceTo(pod.position) - 2.75) < 1e-6);
+    assert.ok(Math.min(pod.t, 1 - pod.t) * curve.getLength() >= 18 - 1e-6, 'The start and finish grid remain clear');
+    for (const other of placements) if (pod !== other) assert.ok(pod.position.distanceTo(other.position) >= 48 - 1e-6, 'The loop seam and corners do not crowd crates');
+  }
+});
+
+test('reserved arrival and boost areas stay free of cargo', () => {
+  const roadCurve = road(400), before = energyPodPlacements({roadCurve});
+  const reservation = {...before[3].position, radius: 6};
+  const after = energyPodPlacements({roadCurve, reservedAreas: [reservation, {x: NaN, z: 0}]});
+  assert.equal(after.length, before.length - 1);
+  assert.ok(after.every(p => Math.hypot(p.position.x - reservation.x, p.position.z - reservation.z) >= reservation.radius));
 });
 
 test('swept contact catches a fast pass and rejects the road beneath an elevated bridge', () => {
@@ -29,45 +59,64 @@ test('swept contact catches a fast pass and rejects the road beneath an elevated
   assert.equal(sweptPodContact(point(NaN), point(10), point(0)), false);
 });
 
-test('manual or guided movement bursts each swept pickup once and reports one aggregate', () => {
+test('manual movement can chase cargo while centerline travel never causes repeated bumps', () => {
   const scene = new Scene(), events = [], game = createPlayground({scene, roadCurve: road(), onBurst: value => events.push(value)});
   game.update({dt: .016, carPosition: point(0), carSpeed: 14});
-  game.update({dt: .016, carPosition: point(22), carSpeed: 14});
-  assert.equal(events.length, 1);assert.equal(events[0].count, 2);assert.equal(events[0].total, 2);
+  game.update({dt: .016, carPosition: point(40), carSpeed: 14});
+  assert.equal(events.length, 0, 'The guided centerline remains clear');
+  passCargo(game);
+  assert.equal(events.length, 1);assert.equal(events[0].count, 1);assert.equal(events[0].total, 1);
   assert.ok(events[0].position.isVector3);assert.ok(events[0].intensity > 0 && events[0].intensity <= 1);
-  game.update({dt: .016, carPosition: point(0), carSpeed: -14});
+  game.update({dt: .016, carPosition: cargoLane(0), carSpeed: -14});
   assert.equal(events.length, 1, 'A reverse pass during cooldown does not repeatedly score the same pods');
-  assert.equal(game.stats.activePods, game.stats.pods - 2);game.dispose();assert.equal(scene.children.length, 0);
+  assert.equal(game.stats.activePods, game.stats.pods - 1);game.dispose();assert.equal(scene.children.length, 0);
 });
 
 test('pause freezes cooldown and particles; pickups return only after active game time', () => {
-  const scene = new Scene(), events = [], game = createPlayground({scene, roadCurve: road(8), onBurst: value => events.push(value)});
-  game.update({dt: .05, carPosition: point(0), carSpeed: 10});game.update({dt: .05, carPosition: point(8), carSpeed: 10});
+  const scene = new Scene(), events = [], game = createPlayground({scene, roadCurve: road(), onBurst: value => events.push(value)});
+  passCargo(game);
   assert.equal(game.stats.bursts, 1);const before = game.stats.activeShards;
   for (let i = 0; i < 200; i++) game.update({dt: .1, paused: true, carPosition: point(0), carSpeed: 10});
   assert.equal(game.stats.activeShards, before);assert.equal(game.stats.activePods, 0);
-  game.update({dt: .05, carPosition: point(8), carSpeed: 10});assert.equal(events.length, 1);
-  for (let i = 0; i < 162; i++) game.update({dt: .1, carPosition: point(8), carSpeed: 0});
+  game.update({dt: .05, carPosition: cargoLane(40), carSpeed: 10});assert.equal(events.length, 1);
+  for (let i = 0; i < 200; i++) game.update({dt: .1, carPosition: cargoLane(40), carSpeed: 0});
+  assert.equal(game.stats.activePods, 0, 'Cargo does not return during a quick return trip');
+  for (let i = 0; i < 360; i++) game.update({dt: .1, carPosition: cargoLane(40), carSpeed: 0});
   assert.equal(game.stats.activePods, 1);assert.equal(game.stats.activeShards, 0);
-  game.update({dt: .05, carPosition: point(0), carSpeed: -10});assert.equal(events.length, 2);game.dispose();
+  game.update({dt: .05, carPosition: cargoLane(0), carSpeed: -10});assert.equal(events.length, 2);game.dispose();
+});
+
+test('race cargo stays absent for ninety active seconds after a hit', () => {
+  const roadCurve = road(418), scene = new Scene(), game = createPlayground({scene, roadCurve, profile: 'race'});
+  const first = energyPodPlacements({roadCurve, profile: 'race'})[0].position;
+  game.update({dt: .016, carPosition: first.clone().add(point(-4, 0)), carSpeed: 16});
+  game.update({dt: .016, carPosition: first.clone().add(point(4, 0)), carSpeed: 16});
+  assert.equal(game.stats.bursts, 1);
+  for (let i = 0; i < 600; i++) game.update({dt: .1, carSpeed: 0});
+  assert.equal(game.stats.activePods, game.stats.pods - 1, 'No new obstacle respawns in front of a later lap');
+  for (let i = 0; i < 310; i++) game.update({dt: .1, carSpeed: 0});
+  assert.equal(game.stats.activePods, game.stats.pods);game.dispose();
 });
 
 test('large burst sweeps have fixed GPU pools, bounded debris, and deterministic teardown', () => {
   const scene = new Scene(), game = createPlayground({scene, roadCurve: road(600)}), root = scene.children[0];
   const renderObjectCount = root.children.length, disposal = [];
   root.children.forEach(mesh => {mesh.geometry.addEventListener('dispose', () => disposal.push(mesh.name));});
-  game.update({dt: .016, carPosition: point(-2), carSpeed: 30});game.update({dt: .016, carPosition: point(602), carSpeed: 30});
+  for (const pod of energyPodPlacements({roadCurve: road(600)})) {
+    game.update({dt: .016, carPosition: pod.position.clone().add(point(-2, 0)), carSpeed: 30});
+    game.update({dt: .016, carPosition: pod.position.clone().add(point(2, 0)), carSpeed: 30});
+  }
   assert.equal(game.stats.bursts, game.stats.pods);assert.equal(root.children.length, renderObjectCount);
   assert.ok(game.stats.activeShards <= game.stats.capacity.shards);assert.ok(game.stats.activeSparks <= game.stats.capacity.sparks);assert.ok(game.stats.activeRings <= game.stats.capacity.rings);
   for (let i = 0; i < 20; i++) game.update({dt: .05, carPosition: point(602), carSpeed: 0});
   assert.ok(game.stats.activeFireballs <= game.stats.capacity.fireballs);assert.ok(game.stats.activeSmoke <= game.stats.capacity.smoke);
   const mesh = root.children.find(child => child.name === 'Pooled metal debris'), matrix = new Matrix4(), position = new Vector3();
-  for (let i = 0; i < mesh.count; i++) {mesh.getMatrixAt(i, matrix);position.setFromMatrixPosition(matrix);assert.ok([position.x, position.y, position.z].every(Number.isFinite));assert.ok(Math.abs(position.z) < 3.5, 'Debris remains in a small arcade burst envelope');}
+  for (let i = 0; i < mesh.count; i++) {mesh.getMatrixAt(i, matrix);position.setFromMatrixPosition(matrix);assert.ok([position.x, position.y, position.z].every(Number.isFinite));assert.ok(Math.abs(position.z) < 4.6, 'Debris remains close to the side-lane cargo');}
   game.dispose();game.dispose();assert.equal(scene.children.length, 0);assert.equal(disposal.length, renderObjectCount);
 });
 
 test('cargo containers have closed solid metal shells, reinforced corners and grounded static poses', () => {
-  const scene = new Scene(), game = createPlayground({scene, roadCurve: road(8)}), root = scene.children[0];
+  const scene = new Scene(), game = createPlayground({scene, roadCurve: road()}), root = scene.children[0];
   const shell = root.children.find(mesh => mesh.name === 'Solid metallic cargo shells');
   const hardware = root.children.find(mesh => mesh.name === 'Cargo reinforced corners and lids');
   assert.ok(shell && hardware);
@@ -86,11 +135,11 @@ test('cargo containers have closed solid metal shells, reinforced corners and gr
 });
 
 test('impact expands a hot yellow-orange fireball, leaves fading smoke and throws metallic plate debris', () => {
-  const scene = new Scene(), game = createPlayground({scene, roadCurve: road(8)}), root = scene.children[0];
+  const scene = new Scene(), game = createPlayground({scene, roadCurve: road()}), root = scene.children[0];
   const fire = root.children.find(mesh => mesh.name === 'Pooled orange yellow fireballs');
   const smoke = root.children.find(mesh => mesh.name === 'Pooled rising explosion smoke');
   const debris = root.children.find(mesh => mesh.name === 'Pooled metal debris');
-  game.update({dt: .016, carPosition: point(0), carSpeed: 16});game.update({dt: .016, carPosition: point(8), carSpeed: 16});
+  passCargo(game);
   assert.equal(game.stats.activeFireballs, 4);assert.equal(game.stats.activeSmoke, 6);
   assert.equal(fire.material.blending, AdditiveBlending);assert.equal(fire.material.depthWrite, false);
   assert.equal(debris.geometry.type, 'BoxGeometry');assert.ok(debris.material.metalness > .9);
@@ -110,7 +159,7 @@ test('impact expands a hot yellow-orange fireball, leaves fading smoke and throw
 });
 
 test('fire and smoke shader hooks integrate with the real Three basic shader and retain valid GLSL line breaks', () => {
-  const scene = new Scene(), game = createPlayground({scene, roadCurve: road(8)});
+  const scene = new Scene(), game = createPlayground({scene, roadCurve: road()});
   for (const name of ['Pooled orange yellow fireballs', 'Pooled rising explosion smoke']) {
     const mesh = scene.children[0].children.find(child => child.name === name);
     const shader = {uniforms: {}, vertexShader: ShaderLib.basic.vertexShader, fragmentShader: ShaderLib.basic.fragmentShader};
@@ -130,8 +179,8 @@ test('fire and smoke shader hooks integrate with the real Three basic shader and
 });
 
 test('late expanding fire decays quickly instead of leaving a translucent spherical bubble', () => {
-  const scene = new Scene(), game = createPlayground({scene, roadCurve: road(8)}), fire = scene.children[0].children.find(mesh => mesh.name === 'Pooled orange yellow fireballs');
-  game.update({dt: .016, carPosition: point(0), carSpeed: 16});game.update({dt: .016, carPosition: point(8), carSpeed: 16});
+  const scene = new Scene(), game = createPlayground({scene, roadCurve: road()}), fire = scene.children[0].children.find(mesh => mesh.name === 'Pooled orange yellow fireballs');
+  passCargo(game);
   game.update({dt: .08, carPosition: point(8), carSpeed: 0});
   const peak = Math.max(...fire.geometry.getAttribute('burstOpacity').array);
   assert.ok(peak > .5, 'the initial burst has dense hot cores');
@@ -143,8 +192,8 @@ test('late expanding fire decays quickly instead of leaving a translucent spheri
 });
 
 test('ECO preserves the fireball with fewer particles and pause/reset freeze and clear every new pool', () => {
-  const scene = new Scene(), game = createPlayground({scene, roadCurve: road(8)}), root = scene.children[0];
-  game.update({dt: .016, carPosition: point(0), carSpeed: 12, quality: 'eco'});game.update({dt: .016, carPosition: point(8), carSpeed: 12, quality: 'eco'});
+  const scene = new Scene(), game = createPlayground({scene, roadCurve: road()}), root = scene.children[0];
+  passCargo(game, {carSpeed: 12, quality: 'eco'});
   assert.equal(game.stats.activeFireballs, 2);assert.equal(game.stats.activeSmoke, 3);
   assert.equal(game.stats.activeShards, 10);assert.equal(game.stats.activeSparks, 10);
   const fire = root.children.find(mesh => mesh.name === 'Pooled orange yellow fireballs'), matrix = fire.instanceMatrix.array.slice(), opacity = fire.geometry.getAttribute('burstOpacity').array.slice();
@@ -157,8 +206,8 @@ test('ECO preserves the fireball with fewer particles and pause/reset freeze and
 });
 
 test('reset clears stale sweeps and reduced motion removes flying debris', () => {
-  const scene = new Scene(), game = createPlayground({scene, roadCurve: road(8), reducedMotion: true});
-  game.update({dt: .016, carPosition: point(0), carSpeed: 10});game.update({dt: .016, carPosition: point(8), carSpeed: 10});
+  const scene = new Scene(), game = createPlayground({scene, roadCurve: road(), reducedMotion: true});
+  passCargo(game, {carSpeed: 10});
   assert.equal(game.stats.bursts, 1);assert.equal(game.stats.activeShards, 0);assert.equal(game.stats.activeSparks, 0);assert.equal(game.stats.activeRings, 1);
   assert.equal(game.stats.activeFireballs, 0);assert.equal(game.stats.activeSmoke, 0);
   game.reset();game.update({dt: .016, carPosition: point(-20), carSpeed: 0});game.reset();game.update({dt: .016, carPosition: point(20), carSpeed: 0});

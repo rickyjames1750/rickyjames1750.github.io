@@ -1,0 +1,68 @@
+/* A quiet invitation that leaves the scene and the reading controls in view. */
+.voice-guide{position:absolute;z-index:8;right:9.4%;top:calc(var(--header-height) + 70px);width:min(290px,28vw);padding:13px 16px 10px;border:1px solid #b6dacf40;border-radius:10px;background:#0b2635ee;box-shadow:0 8px 30px #03142022;color:#edf4e8;backdrop-filter:blur(18px);pointer-events:none}
+.voice-guide[hidden]{display:none!important}
+.voice-guide-heading{display:flex;align-items:center;gap:8px;margin:0 0 7px;font-size:8px;font-weight:750;line-height:1;letter-spacing:1.7px;color:#b7dbcd}
+.voice-guide-indicator{height:11px;display:flex;align-items:center;gap:2px}
+.voice-guide-indicator i{height:3px;width:2px;border-radius:2px;background:#a4e3ce}
+.voice-guide-indicator i:nth-child(2){height:8px}
+.voice-guide-caption{font:500 12px/1.65 Manrope,Arial,sans-serif!important;color:inherit!important;margin:0!important;letter-spacing:0!important}
+.voice-guide-actions{display:flex;align-items:center;justify-content:space-between;margin-top:6px;gap:8px;pointer-events:auto}
+.voice-guide-actions button{background:none;border:0;border-radius:4px;color:#c6ded2;font:650 10px/1.2 Manrope,Arial,sans-serif;letter-spacing:0;min-height:32px;padding:5px 0;cursor:pointer;white-space:nowrap}
+.voice-guide-actions button:hover{color:white}
+.voice-guide-actions button:focus-visible{outline:2px solid #c9f3d9;outline-offset:4px}
+.voice-guide-actions button:disabled{opacity:.55;cursor:default}
+.voice-guide-actions [data-guide-skip]{color:#a7c5bb;font-weight:500}
+.voice-guide-actions [data-guide-skip] span{margin-left:4px}
+.voice-guide.is-speaking .voice-guide-indicator i{animation:guide-speaking .6s ease-in-out alternate infinite}
+.voice-guide.is-speaking .voice-guide-indicator i:nth-child(2){animation-delay:-.3s}
+.voice-guide.is-speaking .voice-guide-indicator i:nth-child(3){animation-delay:-.15s}
+.voice-guide-target{outline:2px solid #d0efbd!important;outline-offset:5px;box-shadow:0 0 0 7px #c7eaae16,0 0 22px #d0efbd18!important}
+.voice-guide-target[data-guide-motion="full"]{animation:guide-invitation 1.8s ease-in-out 3}
+.voice-guide-in-reader{position:relative;top:auto!important;left:auto!important;right:auto!important;bottom:auto!important;transform:none!important;z-index:auto;width:100%!important;margin:0 0 26px;padding:13px 16px 8px;border:1px solid #a8bca580;background:#e7ecde;color:#294c3d;box-shadow:none;backdrop-filter:none}
+.voice-guide-in-reader .voice-guide-heading{color:#577962}
+.voice-guide-in-reader .voice-guide-indicator i{background:#527d62}
+.voice-guide-in-reader .voice-guide-actions button{color:#315a43;min-height:32px}
+.voice-guide-in-reader .voice-guide-actions [data-guide-skip]{color:#577962}
+.voice-guide-in-reader .voice-guide-actions button:hover{color:#102f22}
+.voice-guide-in-reader .voice-guide-actions button:focus-visible{outline-color:#315a43}
+.drive-entrance-active .voice-guide{right:auto;left:4.2%;top:auto;bottom:calc(var(--footer-height) + 18px);width:280px}
+.racing .voice-guide,.classic-mode .voice-guide{display:none}
+@keyframes guide-invitation{0%,100%{outline-color:#bdd6b180;box-shadow:0 0 0 5px #c7eaae0c}50%{outline-color:#e0ffcb;box-shadow:0 0 0 9px #c7eaae27,0 0 28px #d0efbd22}}
+@keyframes guide-speaking{from{height:3px}to{height:10px}}
+@media(max-width:1100px){.voice-guide{right:10%;width:240px;font-size:11px;top:calc(var(--header-height) + 68px)}}
+@media(max-width:760px){.voice-guide{left:5%;right:auto;top:calc(var(--header-height) + 112px);width:calc(90% - 46px);max-width:330px;padding:10px 13px 5px;background:#0b2635f5}.voice-guide-heading{font-size:7px;margin-bottom:5px}.voice-guide-caption{font-size:11px!important;line-height:1.55!important}.voice-guide-actions{margin-top:2px}.voice-guide-actions button{min-height:35px;font-size:10px}.voice-guide-in-reader{margin-bottom:22px}.drive-entrance-active .voice-guide{left:5%;bottom:calc(var(--footer-height) + 10px);width:90%;max-width:none}.voice-guide-target{outline-offset:3px}}
+@media(max-width:760px) and (orientation:portrait){body:not(.driving) .voice-guide{top:auto;bottom:calc(var(--footer-height) + var(--dock-height) + 18px);left:5%;width:90%;max-width:none}.driving .voice-guide:not(.voice-guide-in-reader){top:calc(var(--header-height) + 114px)}.drive-entrance-active .voice-guide:not(.voice-guide-in-reader){top:auto}}
+@media(orientation:landscape) and (max-height:600px){.voice-guide{top:calc(var(--header-height) + 66px);left:auto;right:20px;width:230px;max-width:32vw;padding:8px 12px 3px}.voice-guide-heading{font-size:7px;margin-bottom:4px}.voice-guide-caption{font-size:10px!important;line-height:1.5!important}.voice-guide-actions{margin-top:0}.voice-guide-actions button{min-height:29px;font-size:9px}.drive-entrance-active .voice-guide{left:20px;right:auto;bottom:calc(var(--footer-height) + 7px);width:230px;max-width:35vw}}
+@media(prefers-reduced-motion:reduce){.voice-guide-target,.voice-guide.is-speaking .voice-guide-indicator i{animation:none!important}}
+.voice-guide[data-reduced-motion="true"] .voice-guide-indicator i{animation:none!important}
+
+/* Reserve room for the welcome caption above the five-stop dock on compact phones. */
+@media(max-width:760px) and (orientation:portrait) and (max-height:850px){
+ #explore[data-guide-active="true"][data-guide-step="home"] .intro{top:calc(var(--header-height) + 89px)}
+ #explore[data-guide-active="true"][data-guide-step="home"] .intro h1{font-size:44px;margin:12px 0}
+ #explore[data-guide-active="true"][data-guide-step="home"] .intro p{font-size:12px;line-height:1.6}
+ #explore[data-guide-active="true"][data-guide-step="home"] .intro-actions{margin-top:14px}
+ #explore[data-guide-active="true"][data-guide-step="home"] .portfolio-shortcuts{margin-top:4px}
+ #explore[data-guide-active="true"] #sound-hint:not(.following){top:calc(var(--header-height) + 6px);bottom:auto;left:auto;right:5%;font-size:9px;padding:6px 9px}
+}
+@media(max-width:760px) and (orientation:portrait) and (max-height:740px){
+ #explore[data-guide-active="true"][data-guide-step="home"] .intro{top:calc(var(--header-height) + 78px)}
+ #explore[data-guide-active="true"][data-guide-step="home"] .intro>.eyebrow{display:none}
+ #explore[data-guide-active="true"][data-guide-step="home"] .intro h1{font-size:34px;margin:8px 0}
+ #explore[data-guide-active="true"][data-guide-step="home"] .intro p{font-size:11px;line-height:1.5}
+ #explore[data-guide-active="true"][data-guide-step="home"] .intro-actions{margin-top:10px}
+ #explore[data-guide-active="true"][data-guide-step="home"] #start{min-height:44px;padding:9px 15px}
+ #explore[data-guide-active="true"][data-guide-step="home"] .voice-guide{padding:8px 12px 4px}
+ #explore[data-guide-active="true"][data-guide-step="home"] .voice-guide-heading{display:none}
+ #explore[data-guide-active="true"][data-guide-step="home"] .voice-guide-caption{font-size:10px!important;line-height:1.5!important}
+ #explore[data-guide-active="true"][data-guide-step="home"] .voice-guide-actions button{min-height:32px}
+}
+@media(max-width:760px) and (orientation:portrait) and (max-height:740px){
+ #explore[data-guide-active="true"][data-guide-step="home"] .intro h1{font-size:32px;margin:6px 0}
+ #explore[data-guide-active="true"][data-guide-step="home"] .intro p{max-height:34px;overflow:hidden}
+}
+/* Reader guidance keeps its paper palette at every screen size. */
+.voice-guide.voice-guide-in-reader{background:#e7ecde;color:#294c3d}
+@media(max-width:760px) and (orientation:portrait) and (max-height:740px){
+ #explore[data-guide-active="true"][data-guide-step="home"] .portfolio-shortcuts{margin-top:0}
+}
