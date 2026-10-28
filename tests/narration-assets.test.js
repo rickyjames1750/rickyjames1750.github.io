@@ -25,7 +25,7 @@ function inspectRecording(bytes){
   offset+=frameLength;frames++;seconds+=576/sampleRate;
  }
  assert.ok(frames>70,'A full spoken phrase is bundled');
- assert.ok(seconds>=2&&seconds<=10,'Guide phrases are short and finite');
+ assert.ok(seconds>=2&&seconds<=14,'Guide phrases are short and finite');
  assert.ok(bytes.length-offset<=128,'No unexpected trailing audio data');
  return seconds;
 }
@@ -36,9 +36,9 @@ test('every guide phrase is a complete, compact MP3 shipped with the site',async
   const file=new URL(`../public/narration/${clip}.mp3`,import.meta.url);
   const [bytes,info]=await Promise.all([readFile(file),stat(file)]);
   assert.ok(info.isFile(),`${clip} exists in the public build input`);
-  assert.ok(info.size>30000&&info.size<180000,`${clip} is a compact complete phrase`);
+  assert.ok(info.size>30000&&info.size<240000,`${clip} is a compact complete phrase`);
   inspectRecording(bytes);total+=info.size;
  }
  assert.equal(Object.keys(NARRATION_CLIPS).length,13);
- assert.ok(total<2_000_000,'The full optional guide stays below two megabytes');
+ assert.ok(total<2_500_000,'The full optional guide stays below two and a half megabytes');
 });

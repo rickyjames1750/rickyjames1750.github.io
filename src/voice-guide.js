@@ -9,24 +9,25 @@ const stopFor = id => STOPS.find(stop => stop.id === id);
 
 /** Recorded phrases share one consistent studio voice on every device. */
 export const NARRATION_CLIPS = Object.freeze({
- 'welcome': 'Welcome to Ricky Sparks’ portfolio. Take the wheel, and explore a different perspective.',
- 'reveal': 'Ready? Click anywhere to reveal the world.',
- 'choose-about-car': 'Let’s begin. Choose number one, About me, at the bottom. Your car will take you there.',
- 'choose-about-train': 'Let’s begin. Choose number one, About me, at the bottom. Your train will take you there.',
- 'arrive-about-car': 'Welcome to About me. Take your time. When you’re ready, Next section takes your car to Experience.',
- 'arrive-about-train': 'Welcome to About me. Take your time. When you’re ready, Next section takes your train to Experience.',
- 'arrive-experience-car': 'Here’s Experience. Read at your own pace. Next section takes your car to Projects.',
- 'arrive-experience-train': 'Here’s Experience. Read at your own pace. Next section takes your train to Projects.',
- 'arrive-projects-car': 'This is Projects. Explore the work, then choose Next section. Your car will take you to Education.',
- 'arrive-projects-train': 'This is Projects. Explore the work, then choose Next section. Your train will take you to Education.',
- 'arrive-education-car': 'You’ve reached Education. When you’re ready, Next section takes your car to Say hello.',
- 'arrive-education-train': 'You’ve reached Education. When you’re ready, Next section takes your train to Say hello.',
- 'arrive-contact': 'Thanks for exploring. My contact details are here. I’d love to hear what you’re building.',
+ "welcome": "Welcome to Ricky Sparks’ portfolio. Explore his background in software, data engineering, and technical support. Take the wheel for a guided look at his work.",
+ "reveal": "Click anywhere to explore Ricky’s world, and discover the work behind the journey.",
+ "choose-about-car": "Start with number one, About me. You’ll meet Ricky, then explore his experience, projects, and education, one stop at a time.",
+ "choose-about-train": "Start with number one, About me. The train will guide you through Ricky’s background, experience, and projects, one stop at a time.",
+ "arrive-about-car": "Ricky is a Menlo Park technology professional who connects software, data, and people. You can check his experience next, from Python and SQL pipelines to hands-on technical support.",
+ "arrive-about-train": "Ricky is a Menlo Park technology professional who connects software, data, and people. You can check his experience next, from Python and SQL pipelines to hands-on technical support.",
+ "arrive-experience-car": "Here you can explore Ricky’s experience building SQL and Python data pipelines, checking data quality, and troubleshooting applications. Next, see how he applies that curiosity in his projects.",
+ "arrive-experience-train": "Here you can explore Ricky’s experience building SQL and Python data pipelines, checking data quality, and troubleshooting applications. Next, see how he applies that curiosity in his projects.",
+ "arrive-projects-car": "His projects span computer vision, anomaly detection, and collaborative software design. You can explore his code here, then continue to his education.",
+ "arrive-projects-train": "His projects span computer vision, anomaly detection, and collaborative software design. You can explore his code here, then continue to his education.",
+ "arrive-education-car": "Ricky earned his bachelor’s degree summa cum laude, then completed a master’s in computer science. You can explore his academic background here, and connect with him at the next stop.",
+ "arrive-education-train": "Ricky earned his bachelor’s degree summa cum laude, then completed a master’s in computer science. You can explore his academic background here, and connect with him at the next stop.",
+ "arrive-contact": "If Ricky’s background fits what your team is building, you can reach out here. Explore his GitHub, connect on LinkedIn, or download his résumé to keep the conversation going."
 });
+export const NARRATION_REVISION = 'showcase-20261028';
 
 export function narrationURL(clip, baseURL = import.meta.env?.BASE_URL || '/') {
  if(!Object.hasOwn(NARRATION_CLIPS,clip))return null;
- return `${baseURL.replace(/\/?$/, '/')}narration/${clip}.mp3`;
+ return `${baseURL.replace(/\/?$/, '/')}narration/${clip}.mp3?v=${NARRATION_REVISION}`;
 }
 
 /** Decode the studio recordings once, then share one controlled playback graph. */
@@ -181,7 +182,7 @@ export function createGuideJourney() {
  const vehicle=()=>mode==='train'?'train':'car';
  function firstStop(){
   phase='choose';
-  return {key:`choose-about-${vehicle()}`,clip:`choose-about-${vehicle()}`,text:`Choose 1, About me, along the bottom. Your ${vehicle()} will take you there.`,target:'.route-stops [data-zone="about"]',speak:true,inDialog:false};
+  return {key:`choose-about-${vehicle()}`,clip:`choose-about-${vehicle()}`,text:`Choose 1, About me, below to meet Ricky. Your ${vehicle()} will guide you through his background, experience, projects, and education.`,target:'.route-stops [data-zone="about"]',speak:true,inDialog:false};
  }
  function event(type,data={}) {
   if(type==='mode'){
@@ -190,32 +191,32 @@ export function createGuideJourney() {
    mode=data.mode;
    if(mode==='explore'){
     if(!started || phase==='arrived')return null;
-    phase='browse';message={key:'browse',text:'Explore at your own pace. Choose any numbered stop along the bottom to read my work.',target:null,speak:false,inDialog:false};
+    phase='browse';message={key:'browse',text:'Explore Ricky’s work at your pace. Choose any numbered stop below to learn about his background, experience, projects, or education.',target:null,speak:false,inDialog:false};
    } else if(phase==='home'){started=true;message=firstStop();}
    else if(phase==='choose')message=firstStop();
    else if(phase==='arrived')message=arrival(arrived,nextId,false);
    else return null;
   } else if(type==='welcome' || type==='home'){
    phase='home';started=false;arrived=null;nextId=null;entrance='idle';
-   message={key:'welcome',clip:'welcome',text:'Welcome to Ricky Sparks’ portfolio. Please click Take the wheel to begin.',target:'#start',speak:true,inDialog:false};
+   message={key:'welcome',clip:'welcome',text:'Meet Ricky Sparks. Choose Take the wheel to explore his work and experience.',target:'#start',speak:true,inDialog:false};
   } else if(type==='entrance'){
    if(data.phase===entrance)return null;
    entrance=data.phase;
    if(entrance==='approach'){
     started=true;phase='approach';arrived=null;
-    message={key:'approach',text:'Your journey is coming into focus.',target:null,speak:false,inDialog:false};
+    message={key:'approach',text:'Ricky’s world is coming into focus.',target:null,speak:false,inDialog:false};
    } else if(entrance==='ready'){
     phase='ready';
-    message={key:'reveal',clip:'reveal',text:'Click anywhere to reveal the world.',target:'#reveal-world',speak:true,inDialog:false};
+    message={key:'reveal',clip:'reveal',text:'Click anywhere to reveal Ricky’s world and explore his work.',target:'#reveal-world',speak:true,inDialog:false};
    } else if(entrance==='reveal'){
     phase='reveal';
-    message={key:'revealing',text:'One Bay. A world of possibilities.',target:null,speak:false,inDialog:false};
+    message={key:'revealing',text:'One Bay. New perspectives on Ricky’s work.',target:null,speak:false,inDialog:false};
    } else if(entrance==='idle' && started && ['approach','ready','reveal'].includes(phase))message=firstStop();
    else return null;
   } else if(type==='travel'){
    const stop=stopFor(data.id);if(!stop)return null;
    started=true;phase='travel';
-   message={key:`travel-${stop.id}`,text:`On the way to ${stop.number}, ${stop.label}. Enjoy the view.`,target:null,speak:false,inDialog:false};
+   message={key:`travel-${stop.id}`,text:`On the way to ${stop.number}, ${stop.label}. Take a scenic look at Ricky’s world as the ${vehicle()} brings the next section into view.`,target:null,speak:false,inDialog:false};
   } else if(type==='arrive'){
    const stop=stopFor(data.id);if(!stop)return null;
    const following=data.nextId || STOPS[STOPS.indexOf(stop)+1]?.id || null;
@@ -226,14 +227,21 @@ export function createGuideJourney() {
    if(!arrived)return null;
    const next=stopFor(nextId);
    phase='between';
-   message=next?{key:`next-${next.id}`,text:`Ready for the next stop? Choose ${next.number}, ${next.label}, along the bottom.`,target:`.route-stops [data-zone="${next.id}"]`,speak:false,inDialog:false}:{key:'complete',text:'Thanks for exploring. Choose any stop to revisit my work.',target:null,speak:false,inDialog:false};
+   message=next?{key:`next-${next.id}`,text:`Continue exploring Ricky’s background. Choose ${next.number}, ${next.label}, along the bottom to see the next part of his work and story.`,target:`.route-stops [data-zone="${next.id}"]`,speak:false,inDialog:false}:{key:'complete',text:'Thanks for exploring Ricky’s portfolio. Revisit any stop to see his work, download his résumé, or use Say hello to connect.',target:null,speak:false,inDialog:false};
   } else return null;
+  if(message.clip)message.spoken=NARRATION_CLIPS[message.clip];
   return message;
  }
  function arrival(id,next,speak){
-  const stop=stopFor(id),destination=stopFor(next);
-  if(id==='contact')return {key:'arrive-contact',clip:'arrive-contact',text:'You’ve reached Say hello. My contact details are here whenever you’re ready.',spoken:'You’ve reached Say hello. Thanks for exploring. I’d love to hear what you’re building.',target:null,speak,inDialog:true};
-  return {key:`arrive-${id}-${vehicle()}`,clip:`arrive-${id}-${vehicle()}`,text:`${stop.label}. Read at your pace. Next section takes your ${vehicle()} to ${destination?`${destination.number}, ${destination.label}`:'the next stop'}.`,spoken:`Here’s ${stop.label}. Read at your own pace, then choose Next section. Your ${vehicle()} will take you to ${destination?`number ${destination.number}, ${destination.label}`:'the next stop'}.`,target:'#next',speak,inDialog:true};
+  const destination=stopFor(next),clip=id==='contact'?'arrive-contact':`arrive-${id}-${vehicle()}`;
+  if(id==='contact')return {key:clip,clip,text:'Ricky’s contact details are here. Explore his GitHub, connect on LinkedIn, or download his résumé to see whether his background fits your team.',target:null,speak,inDialog:true};
+  const summaries={
+   about:'Meet Ricky, a Menlo Park technology professional connecting software, data, and people.',
+   experience:'Explore Ricky’s Python and SQL pipelines, data quality work, and application support.',
+   projects:'Explore his code in computer vision, anomaly detection, and collaborative software design.',
+   education:'Ricky earned his bachelor’s degree summa cum laude and holds a master’s in computer science.',
+  };
+  return {key:clip,clip,text:`${summaries[id]} Next section takes your ${vehicle()} to ${destination?`${destination.number}, ${destination.label}`:'the next stop'}.`,target:'#next',speak,inDialog:true};
  }
  return {event,state:()=>({mode,phase,started,arrived,nextId,entrance})};
 }

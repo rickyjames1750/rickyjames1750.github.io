@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {NARRATION_CLIPS,narrationURL,createRecordedNarrator,createGuideJourney} from '../src/voice-guide.js';
+import {NARRATION_CLIPS,NARRATION_REVISION,narrationURL,createRecordedNarrator,createGuideJourney} from '../src/voice-guide.js';
+import {content} from '../src/content.js';
 
 const flush=async()=>{for(let i=0;i<15;i++)await Promise.resolve();};
 function fixture({resume='allow',deferred=false,shared=false}={}){
@@ -24,15 +25,15 @@ function fixture({resume='allow',deferred=false,shared=false}={}){
  const sharedContext=shared?new Context():null;
  const mainGain=sharedContext?.createGain();if(mainGain)mainGain.gain.value=.35;
  const narrator=createRecordedNarrator({AudioContext:Context,getAudioContext:shared?()=>sharedContext:undefined,fetch:fetchAudio,baseURL:'/portfolio/',onSpeaking:value=>speaking.push(value),onStatus:(status,diagnostics)=>statuses.push({status,diagnostics}),setTimer:(fn,delay)=>{const id=++timerId;timers.set(id,{fn,delay});return id;},clearTimer:id=>timers.delete(id)});
- return {narrator,contexts,sources,fetches,timers,speaking,statuses,mainGain,get context(){return contexts[0];},resume(value){resumeMode=value;},missing(value){missing=value;},resolve(clip){const index=waiting.findIndex(item=>item.kind==='fetch'&&item.url.endsWith(`/${clip}.mp3`));assert.ok(index>=0);waiting.splice(index,1)[0].resolve();},settleResume(){for(const item of waiting.filter(item=>item.kind==='resume'))item.resolve();},end(){sources.at(-1).onended();},tick(){const entries=[...timers];timers.clear();for(const [,timer] of entries)timer.fn();}};
+ return {narrator,contexts,sources,fetches,timers,speaking,statuses,mainGain,get context(){return contexts[0];},resume(value){resumeMode=value;},missing(value){missing=value;},resolve(clip){const index=waiting.findIndex(item=>item.kind==='fetch'&&item.url.split('?')[0].endsWith(`/${clip}.mp3`));assert.ok(index>=0);waiting.splice(index,1)[0].resolve();},settleResume(){for(const item of waiting.filter(item=>item.kind==='resume'))item.resolve();},end(){sources.at(-1).onended();},tick(){const entries=[...timers];timers.clear();for(const [,timer] of entries)timer.fn();}};
 }
 
 test('all thirteen instructions resolve only to bundled recordings under the site base',()=>{
  assert.equal(Object.keys(NARRATION_CLIPS).length,13);
  for(const clip of Object.keys(NARRATION_CLIPS)){
-  assert.equal(narrationURL(clip),`/narration/${clip}.mp3`);
-  assert.equal(narrationURL(clip,'/portfolio/'),`/portfolio/narration/${clip}.mp3`);
-  assert.equal(narrationURL(clip,'/portfolio'),`/portfolio/narration/${clip}.mp3`);
+  assert.equal(narrationURL(clip),`/narration/${clip}.mp3?v=showcase-20261028`);
+  assert.equal(narrationURL(clip,'/portfolio/'),`/portfolio/narration/${clip}.mp3?v=showcase-20261028`);
+  assert.equal(narrationURL(clip,'/portfolio'),`/portfolio/narration/${clip}.mp3?v=showcase-20261028`);
   assert.ok(NARRATION_CLIPS[clip].length>25);
  }
  assert.equal(narrationURL('../elsewhere'),null);assert.equal(narrationURL('unknown'),null);
@@ -40,7 +41,7 @@ test('all thirteen instructions resolve only to bundled recordings under the sit
 
 test('decodes the requested recording and ducks only when a running context starts it',async()=>{
  const f=fixture();f.narrator.request('welcome');assert.deepEqual(f.speaking,[]);await flush();
- assert.equal(f.fetches[0],'/portfolio/narration/welcome.mp3');assert.equal(f.sources.length,1);
+ assert.equal(f.fetches[0],'/portfolio/narration/welcome.mp3?v=showcase-20261028');assert.equal(f.sources.length,1);
  assert.equal(f.sources[0].loop,false);assert.equal(f.sources[0].started,true);assert.deepEqual(f.speaking,[true]);
  f.end();assert.deepEqual(f.speaking,[true,false]);assert.equal(f.narrator.state().pending,null);
  f.narrator.retry();f.narrator.request('welcome');await flush();assert.equal(f.sources.length,1);f.narrator.destroy();
@@ -141,7 +142,7 @@ test('an external shared context keeps its lifetime and ambient gain while the g
 });
 
 test('entrance instructions replace the welcome, then point to number one',()=>{
- const journey=createGuideJourney();assert.match(journey.event('welcome').text,/Welcome to Ricky Sparks/);
+ const journey=createGuideJourney();assert.match(journey.event('welcome').text,/Meet Ricky Sparks/);
  const approach=journey.event('entrance',{phase:'approach'});assert.equal(approach.speak,false);
  assert.equal(journey.event('entrance',{phase:'approach'}),null);
  assert.equal(journey.event('entrance',{phase:'ready'}).target,'#reveal-world');
@@ -155,7 +156,7 @@ test('train guidance preserves the itinerary, supports section jumps, and stops 
  const journey=createGuideJourney();journey.event('welcome');journey.event('mode',{mode:'train'});
  journey.event('travel',{id:'about'});
  const about=journey.event('arrive',{id:'about',nextId:'experience'});
- assert.match(about.text,/train to 2, Experience/);assert.match(about.spoken,/Your train/);assert.equal(about.target,'#next');
+ assert.match(about.text,/train to 2, Experience/);assert.equal(about.spoken,NARRATION_CLIPS['arrive-about-train']);assert.equal(about.target,'#next');
  assert.equal(journey.event('mode',{mode:'train'}),null);
  assert.equal(journey.event('arrive',{id:'about',nextId:'experience'}),null);
  const travel=journey.event('travel',{id:'education'});assert.equal(travel.speak,false);
@@ -180,7 +181,7 @@ test('direct Drive EV or Caltrain selection begins at About me without the entra
   const journey=createGuideJourney();journey.event('welcome');
   const direct=journey.event('mode',{mode});
   assert.equal(direct.target,'.route-stops [data-zone="about"]');
-  assert.match(direct.text,mode==='train'?/Your train/:/Your car/);
+  assert.match(direct.text,mode==='train'?/Your train/:/Your car/);assert.equal(direct.spoken,NARRATION_CLIPS[direct.clip]);
   assert.equal(journey.state().started,true);
   assert.equal(journey.event('mode',{mode}),null);
  }
@@ -192,4 +193,47 @@ test('Explore after starting has no hidden Take the wheel highlight or repeated 
  assert.equal(explore.target,null);assert.equal(explore.speak,false);assert.equal(explore.key,'browse');
  assert.equal(journey.event('mode',{mode:'explore'}),null);
  assert.equal(journey.state().phase,'browse');
+});
+
+
+test('showcase recordings and captions introduce Ricky in third person and keep spoken text exact',()=>{
+ const firstPerson=/\b(?:I|I’m|I'm|I’d|I'd|my|mine|our|ours|we|we’re|we're)\b/i;
+ for(const script of Object.values(NARRATION_CLIPS))assert.doesNotMatch(script,firstPerson);
+ for(const mode of ['drive','train']){
+  const journey=createGuideJourney();
+  const messages=[journey.event('welcome'),journey.event('mode',{mode})];
+  for(const id of ['about','experience','projects','education','contact']){
+   messages.push(journey.event('travel',{id}),journey.event('arrive',{id}),journey.event('closeSection'));
+  }
+  messages.push(journey.event('mode',{mode:'explore'}));
+  for(const message of messages.filter(Boolean)){
+   assert.doesNotMatch(message.text,firstPerson);
+   if(message.key.startsWith('travel-'))assert.doesNotMatch(message.text,/his (?:car|train)/i);
+   if(message.clip)assert.equal(message.spoken,NARRATION_CLIPS[message.clip]);
+   if(message.key.startsWith('arrive-')){
+    const words=message.text.split(/\s+/).length;
+    assert.ok(words>=20&&words<=28,`${message.key}: ${words} words`);
+   }
+  }
+ }
+});
+
+test('the showcase highlights supported skills and attaches honors specifically to the bachelor’s degree',()=>{
+ assert.match(content('about'),/Menlo Park/);assert.match(NARRATION_CLIPS['arrive-about-car'],/Menlo Park/);
+ assert.match(content('experience'),/SQL and Python/);assert.match(NARRATION_CLIPS['arrive-experience-car'],/SQL and Python data pipelines/);
+ assert.match(content('projects'),/Computer vision/);assert.match(content('projects'),/Anomaly detection/);
+ assert.match(NARRATION_CLIPS['arrive-projects-car'],/computer vision, anomaly detection/);
+ const education=content('education');assert.match(education,/M\.S\. Computer Science/);assert.match(education,/B\.S\. Computer Science/);assert.match(education,/Summa cum laude/);
+ assert.match(NARRATION_CLIPS['arrive-education-car'],/bachelor’s degree summa cum laude/);
+ assert.match(NARRATION_CLIPS['arrive-education-car'],/master’s in computer science/);
+ assert.doesNotMatch(NARRATION_CLIPS['arrive-education-car'],/master’s[^.]*summa cum laude/);
+});
+
+test('the narration revision changes every recording URL so previous dialogue cannot remain cached',()=>{
+ assert.equal(NARRATION_REVISION,'showcase-20261028');
+ for(const clip of Object.keys(NARRATION_CLIPS)){
+  const url=new URL(narrationURL(clip,'/portfolio/'),'https://example.test');
+  assert.equal(url.pathname,`/portfolio/narration/${clip}.mp3`);
+  assert.equal(url.searchParams.get('v'),'showcase-20261028');
+ }
 });
