@@ -7,7 +7,7 @@ const STOPS = [
 ];
 const stopFor = id => STOPS.find(stop => stop.id === id);
 
-/** Recorded phrases share one consistent studio voice on every device. */
+/** Narration uses the same bundled recordings on every device. */
 export const NARRATION_CLIPS = Object.freeze({
  "welcome": "Welcome to Ricky Sparks’ portfolio. Explore his background in data science, analytics, and technical support. Take the wheel for a guided look at his work.",
  "reveal": "Click anywhere to explore Ricky’s world, and discover the work behind the journey.",
@@ -30,7 +30,7 @@ export function narrationURL(clip, baseURL = import.meta.env?.BASE_URL || '/') {
  return `${baseURL.replace(/\/?$/, '/')}narration/${clip}.mp3?v=${NARRATION_REVISION}`;
 }
 
-/** Decode the studio recordings once, then share one controlled playback graph. */
+/** Decode each recording once and use a shared playback graph. */
 export function createRecordedNarrator({
  AudioContext = globalThis.AudioContext || globalThis.webkitAudioContext,
  getAudioContext,
