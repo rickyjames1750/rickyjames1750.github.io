@@ -1,8 +1,8 @@
 # Bayward — Ricky Sparks
 
-An interactive portfolio set in a miniature San Francisco Bay Area. Explore professional experience, projects and education through a driving journey, an electric Caltrain ride, or a direct reading view.
+An interactive portfolio set in a miniature San Francisco Bay Area. Explore data science, analytics, technical support, graduate research and education through a driving journey, an electric Caltrain ride, or a direct reading view.
 
-**[Visit the portfolio](https://rickyjames1750.github.io/)** · **[Download the resume](https://rickyjames1750.github.io/Ricky_Sparks_Resume_2026.pdf)**
+**[Visit the portfolio](https://rickyjames1750.github.io/)** · **[Download the resume](https://rickyjames1750.github.io/Ricky_Sparks_Resume_2026.pdf?v=20261108)**
 
 ## Experience
 

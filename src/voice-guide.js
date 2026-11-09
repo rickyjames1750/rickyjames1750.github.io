@@ -9,21 +9,21 @@ const stopFor = id => STOPS.find(stop => stop.id === id);
 
 /** Recorded phrases share one consistent studio voice on every device. */
 export const NARRATION_CLIPS = Object.freeze({
- "welcome": "Welcome to Ricky Sparks’ portfolio. Explore his background in software, data engineering, and technical support. Take the wheel for a guided look at his work.",
+ "welcome": "Welcome to Ricky Sparks’ portfolio. Explore his background in data science, analytics, and technical support. Take the wheel for a guided look at his work.",
  "reveal": "Click anywhere to explore Ricky’s world, and discover the work behind the journey.",
  "choose-about-car": "Start with number one, About me. You’ll meet Ricky, then explore his experience, projects, and education, one stop at a time.",
  "choose-about-train": "Start with number one, About me. The train will guide you through Ricky’s background, experience, and projects, one stop at a time.",
- "arrive-about-car": "Ricky is a Menlo Park technology professional who connects software, data, and people. You can check his experience next, from Python and SQL pipelines to hands-on technical support.",
- "arrive-about-train": "Ricky is a Menlo Park technology professional who connects software, data, and people. You can check his experience next, from Python and SQL pipelines to hands-on technical support.",
- "arrive-experience-car": "Here you can explore Ricky’s experience building SQL and Python data pipelines, checking data quality, and troubleshooting applications. Next, see how he applies that curiosity in his projects.",
- "arrive-experience-train": "Here you can explore Ricky’s experience building SQL and Python data pipelines, checking data quality, and troubleshooting applications. Next, see how he applies that curiosity in his projects.",
- "arrive-projects-car": "His projects span computer vision, anomaly detection, and collaborative software design. You can explore his code here, then continue to his education.",
- "arrive-projects-train": "His projects span computer vision, anomaly detection, and collaborative software design. You can explore his code here, then continue to his education.",
- "arrive-education-car": "Ricky earned his bachelor’s degree summa cum laude, then completed a master’s in computer science. You can explore his academic background here, and connect with him at the next stop.",
- "arrive-education-train": "Ricky earned his bachelor’s degree summa cum laude, then completed a master’s in computer science. You can explore his academic background here, and connect with him at the next stop.",
+ "arrive-about-car": "Meet Ricky, a Menlo Park technology professional focused on data science and analytics. You can check his experience in Tableau reporting and technical support next.",
+ "arrive-about-train": "Meet Ricky, a Menlo Park technology professional focused on data science and analytics. You can check his experience in Tableau reporting and technical support next.",
+ "arrive-experience-car": "Here you can explore Ricky’s work as a Data Scientist and Data Analyst, preparing validated datasets and Tableau reports. His technical support experience adds clear troubleshooting and communication.",
+ "arrive-experience-train": "Here you can explore Ricky’s work as a Data Scientist and Data Analyst, preparing validated datasets and Tableau reports. His technical support experience adds clear troubleshooting and communication.",
+ "arrive-projects-car": "His graduate research compares three visualization approaches. Explore the findings and their limitations, alongside his credit card fraud detection learning project. You can check his education next.",
+ "arrive-projects-train": "His graduate research compares three visualization approaches. Explore the findings and their limitations, alongside his credit card fraud detection learning project. You can check his education next.",
+ "arrive-education-car": "Ricky earned his bachelor’s in computer science at East Bay, then his master’s at Chico. You can explore his academic background and graduate visualization research here, then connect with him.",
+ "arrive-education-train": "Ricky earned his bachelor’s in computer science at East Bay, then his master’s at Chico. You can explore his academic background and graduate visualization research here, then connect with him.",
  "arrive-contact": "If Ricky’s background fits what your team is building, you can reach out here. Explore his GitHub, connect on LinkedIn, or download his résumé to keep the conversation going."
 });
-export const NARRATION_REVISION = 'showcase-20261028';
+export const NARRATION_REVISION = 'resume-20261108';
 
 export function narrationURL(clip, baseURL = import.meta.env?.BASE_URL || '/') {
  if(!Object.hasOwn(NARRATION_CLIPS,clip))return null;
@@ -236,10 +236,10 @@ export function createGuideJourney() {
   const destination=stopFor(next),clip=id==='contact'?'arrive-contact':`arrive-${id}-${vehicle()}`;
   if(id==='contact')return {key:clip,clip,text:'Ricky’s contact details are here. Explore his GitHub, connect on LinkedIn, or download his résumé to see whether his background fits your team.',target:null,speak,inDialog:true};
   const summaries={
-   about:'Meet Ricky, a Menlo Park technology professional connecting software, data, and people.',
-   experience:'Explore Ricky’s Python and SQL pipelines, data quality work, and application support.',
-   projects:'Explore his code in computer vision, anomaly detection, and collaborative software design.',
-   education:'Ricky earned his bachelor’s degree summa cum laude and holds a master’s in computer science.',
+   about:'Meet Ricky, a Menlo Park technology professional focused on data science, analytics, and technical support.',
+   experience:'Explore Ricky’s Data Scientist and Data Analyst roles, Tableau reporting, data validation, and technical support.',
+   projects:'Explore his graduate visualization research, its findings and limitations, and a credit card fraud detection learning project.',
+   education:'Ricky holds computer science degrees from California State University, East Bay and Chico, with graduate research in visualization.',
   };
   return {key:clip,clip,text:`${summaries[id]} Next section takes your ${vehicle()} to ${destination?`${destination.number}, ${destination.label}`:'the next stop'}.`,target:'#next',speak,inDialog:true};
  }

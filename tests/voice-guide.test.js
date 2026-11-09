@@ -31,9 +31,9 @@ function fixture({resume='allow',deferred=false,shared=false}={}){
 test('all thirteen instructions resolve only to bundled recordings under the site base',()=>{
  assert.equal(Object.keys(NARRATION_CLIPS).length,13);
  for(const clip of Object.keys(NARRATION_CLIPS)){
-  assert.equal(narrationURL(clip),`/narration/${clip}.mp3?v=showcase-20261028`);
-  assert.equal(narrationURL(clip,'/portfolio/'),`/portfolio/narration/${clip}.mp3?v=showcase-20261028`);
-  assert.equal(narrationURL(clip,'/portfolio'),`/portfolio/narration/${clip}.mp3?v=showcase-20261028`);
+  assert.equal(narrationURL(clip),`/narration/${clip}.mp3?v=resume-20261108`);
+  assert.equal(narrationURL(clip,'/portfolio/'),`/portfolio/narration/${clip}.mp3?v=resume-20261108`);
+  assert.equal(narrationURL(clip,'/portfolio'),`/portfolio/narration/${clip}.mp3?v=resume-20261108`);
   assert.ok(NARRATION_CLIPS[clip].length>25);
  }
  assert.equal(narrationURL('../elsewhere'),null);assert.equal(narrationURL('unknown'),null);
@@ -41,7 +41,7 @@ test('all thirteen instructions resolve only to bundled recordings under the sit
 
 test('decodes the requested recording and ducks only when a running context starts it',async()=>{
  const f=fixture();f.narrator.request('welcome');assert.deepEqual(f.speaking,[]);await flush();
- assert.equal(f.fetches[0],'/portfolio/narration/welcome.mp3?v=showcase-20261028');assert.equal(f.sources.length,1);
+ assert.equal(f.fetches[0],'/portfolio/narration/welcome.mp3?v=resume-20261108');assert.equal(f.sources.length,1);
  assert.equal(f.sources[0].loop,false);assert.equal(f.sources[0].started,true);assert.deepEqual(f.speaking,[true]);
  f.end();assert.deepEqual(f.speaking,[true,false]);assert.equal(f.narrator.state().pending,null);
  f.narrator.retry();f.narrator.request('welcome');await flush();assert.equal(f.sources.length,1);f.narrator.destroy();
@@ -212,28 +212,36 @@ test('showcase recordings and captions introduce Ricky in third person and keep 
    if(message.clip)assert.equal(message.spoken,NARRATION_CLIPS[message.clip]);
    if(message.key.startsWith('arrive-')){
     const words=message.text.split(/\s+/).length;
-    assert.ok(words>=20&&words<=28,`${message.key}: ${words} words`);
+    assert.ok(words>=20&&words<=38,`${message.key}: ${words} words`);
    }
   }
  }
 });
 
-test('the showcase highlights supported skills and attaches honors specifically to the bachelor’s degree',()=>{
+test('the guide reflects the updated resume roles, research and education without superseded claims',()=>{
  assert.match(content('about'),/Menlo Park/);assert.match(NARRATION_CLIPS['arrive-about-car'],/Menlo Park/);
- assert.match(content('experience'),/SQL and Python/);assert.match(NARRATION_CLIPS['arrive-experience-car'],/SQL and Python data pipelines/);
- assert.match(content('projects'),/Computer vision/);assert.match(content('projects'),/Anomaly detection/);
- assert.match(NARRATION_CLIPS['arrive-projects-car'],/computer vision, anomaly detection/);
- const education=content('education');assert.match(education,/M\.S\. Computer Science/);assert.match(education,/B\.S\. Computer Science/);assert.match(education,/Summa cum laude/);
- assert.match(NARRATION_CLIPS['arrive-education-car'],/bachelor’s degree summa cum laude/);
- assert.match(NARRATION_CLIPS['arrive-education-car'],/master’s in computer science/);
- assert.doesNotMatch(NARRATION_CLIPS['arrive-education-car'],/master’s[^.]*summa cum laude/);
+ for(const role of ['Data Scientist','Data Analyst']){
+  assert.ok(content('experience').includes(role));
+  assert.ok(NARRATION_CLIPS['arrive-experience-car'].includes(role));
+ }
+ assert.match(NARRATION_CLIPS.welcome,/data science, analytics, and technical support/);
+ assert.match(NARRATION_CLIPS['arrive-projects-car'],/graduate research/);
+ assert.match(NARRATION_CLIPS['arrive-projects-car'],/findings and their limitations/);
+ assert.match(NARRATION_CLIPS['arrive-projects-car'],/fraud detection learning project/);
+ const education=content('education');assert.match(education,/M\.S\. Computer Science/);assert.match(education,/B\.S\. Computer Science/);
+ for(const text of [content('about'),education,...Object.values(NARRATION_CLIPS)]){
+  assert.doesNotMatch(text,/summa cum laude|3\.74|Dean’s List|Data Engineer|Data Operations Associate|data pipelines|data engineering|Walkify/i);
+ }
+ for(const section of ['about','experience','projects','education']){
+  assert.equal(NARRATION_CLIPS[`arrive-${section}-car`],NARRATION_CLIPS[`arrive-${section}-train`]);
+ }
 });
 
 test('the narration revision changes every recording URL so previous dialogue cannot remain cached',()=>{
- assert.equal(NARRATION_REVISION,'showcase-20261028');
+ assert.equal(NARRATION_REVISION,'resume-20261108');
  for(const clip of Object.keys(NARRATION_CLIPS)){
   const url=new URL(narrationURL(clip,'/portfolio/'),'https://example.test');
   assert.equal(url.pathname,`/portfolio/narration/${clip}.mp3`);
-  assert.equal(url.searchParams.get('v'),'showcase-20261028');
+  assert.equal(url.searchParams.get('v'),'resume-20261108');
  }
 });
